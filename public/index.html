@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>NestUs — Find your hostel or PG</title>
+<link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <div class="nav">
+    <div class="brand" onclick="route('home')">Nest<span style="color:#c9c3f7">Us</span></div>
+    <div class="navlinks">
+      <a onclick="route('home')">Home</a>
+      <a onclick="route('list')">List your property</a>
+      <button class="signup">Sign up</button>
+    </div>
+  </div>
+
+  <div class="wrap">
+
+    <!-- HOME -->
+    <section id="v-home" class="view show">
+      <div class="hero">
+        <h1>Find your home away from home</h1>
+        <p>Verified hostels &amp; PGs for students across India</p>
+        <div class="searchbar">
+          <div><label>City</label><select id="s-city"></select></div>
+          <div><label>Gender</label>
+            <select id="s-gender"><option>Any</option><option>Girls</option><option>Boys</option><option>Co-ed</option></select>
+          </div>
+          <div><label>Near college / area</label><input id="s-college" placeholder="e.g. VNIT, Dharampeth"></div>
+          <button class="go" onclick="doSearch()">Search</button>
+        </div>
+      </div>
+      <div class="stats" id="home-stats"></div>
+      <div class="sec">Browse by city</div>
+      <div class="cities" id="home-cities"></div>
+    </section>
+
+    <!-- RESULTS -->
+    <section id="v-results" class="view">
+      <button class="back" onclick="route('home')">← New search</button>
+      <div class="rhead">
+        <h2 id="results-title">Hostels &amp; PGs</h2>
+        <div class="sortwrap">Sort by
+          <select id="r-sort" onchange="loadResults()">
+            <option value="">Relevance</option>
+            <option value="rent_asc">Rent: low to high</option>
+            <option value="rent_desc">Rent: high to low</option>
+            <option value="rating">Rating</option>
+          </select>
+        </div>
+      </div>
+      <div class="chips" id="r-chips">
+        <div class="chip" data-f="food">Food included</div>
+        <div class="chip" data-f="ac">AC rooms</div>
+        <div class="chip" data-f="verified">Verified only</div>
+      </div>
+      <div class="cards" id="results-cards"></div>
+    </section>
+
+    <!-- DETAIL -->
+    <section id="v-detail" class="view">
+      <button class="back" onclick="route('results')">← Back to results</button>
+      <div id="detail-content"></div>
+    </section>
+
+    <!-- LIST YOUR PROPERTY -->
+    <section id="v-list" class="view">
+      <div class="formcard">
+        <h2>List your property</h2>
+        <div class="sub">Reach students looking for hostels &amp; PGs. Free to list — goes live after our team verifies it.</div>
+        <div class="fsec">Property details</div>
+        <div class="row2">
+          <div class="field"><label>Property name *</label><input id="o-name" placeholder="e.g. Shree Girls Hostel"></div>
+          <div class="field"><label>City *</label><select id="o-city"><option>Nagpur</option><option>Indore</option></select></div>
+        </div>
+        <div class="row2">
+          <div class="field"><label>Area / locality</label><input id="o-area" placeholder="Dharampeth"></div>
+          <div class="field"><label>Nearest college</label><input id="o-college" placeholder="VNIT"></div>
+        </div>
+        <div class="row2">
+          <div class="field"><label>For</label><select id="o-gender"><option>Girls</option><option>Boys</option><option>Co-ed</option></select></div>
+          <div class="field"><label>Starting rent (₹/mo) *</label><input id="o-rent" type="number" placeholder="6000"></div>
+        </div>
+        <div class="row2">
+          <div class="field"><label>Available from</label><input id="o-date" type="date"></div>
+          <div class="field"><label>Food</label><select id="o-food"><option value="true">Included</option><option value="false">Not included</option></select></div>
+        </div>
+        <div class="fsec">Amenities</div>
+        <div class="checks" id="o-amen">
+          <label><input type="checkbox" value="WiFi" checked> WiFi</label>
+          <label><input type="checkbox" value="CCTV"> CCTV</label>
+          <label><input type="checkbox" value="Laundry"> Laundry</label>
+          <label><input type="checkbox" value="Water purifier"> Water purifier</label>
+          <label><input type="checkbox" value="Parking"> Parking</label>
+          <label><input type="checkbox" value="Power backup"> Power backup</label>
+          <label><input type="checkbox" value="AC"> AC rooms</label>
+          <label><input type="checkbox" value="Study room"> Study room</label>
+        </div>
+        <div class="fsec">Contact &amp; description</div>
+        <div class="row2">
+          <div class="field"><label>Contact phone *</label><input id="o-phone" placeholder="+91 ..."></div>
+          <div class="field"><label>WhatsApp number</label><input id="o-wa" placeholder="91XXXXXXXXXX"></div>
+        </div>
+        <div class="field"><label>Description</label><textarea id="o-desc" placeholder="Location highlights, nearby colleges, rules, what makes it special..."></textarea></div>
+        <button class="btn" onclick="submitListing()">Submit for verification</button>
+        <div class="note">We review every listing before it goes live.</div>
+      </div>
+    </section>
+
+  </div>
+
+  <!-- Contact modal -->
+  <div class="modal-bg" id="modal">
+    <div class="modal">
+      <div id="modal-form">
+        <h3>Contact the owner</h3>
+        <p class="s" id="modal-sub"></p>
+        <div class="field"><label>Your name *</label><input id="e-name"></div>
+        <div class="field"><label>Your phone *</label><input id="e-phone"></div>
+        <div class="field"><label>Message</label><textarea id="e-msg" placeholder="Hi, I'm interested in a room. Is it available?"></textarea></div>
+        <button class="btn" onclick="sendEnquiry()">Send enquiry</button>
+        <button class="btn alt" id="wa-btn">Chat on WhatsApp</button>
+        <div class="note" id="modal-phone"></div>
+        <button class="back" style="margin-top:10px;display:block" onclick="closeModal()">Cancel</button>
+      </div>
+      <div id="modal-ok" style="display:none" class="ok">
+        <div class="tick">✅</div>
+        <h3>Enquiry sent!</h3>
+        <p class="s">The owner will get your details and reach out. You can also call or WhatsApp them directly.</p>
+        <button class="btn" onclick="closeModal()">Done</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="toast" id="toast"></div>
+  <script src="/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>NestUs — Admin</title>
+<link rel="stylesheet" href="/styles.css">
+<style>
+  .admin-wrap{max-width:860px;margin:0 auto;padding:24px 18px 60px;}
+  .keybar{background:#fff;border:1px solid var(--line);border-radius:12px;padding:16px;display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:20px;}
+  .keybar input{flex:1;min-width:180px;border:1px solid var(--line);border-radius:8px;padding:10px;}
+  .keybar button{background:var(--purple2);color:#fff;border:none;padding:10px 18px;border-radius:8px;font-weight:700;cursor:pointer;}
+  .tabs{display:flex;gap:8px;margin-bottom:16px;}
+  .tabs button{border:1px solid var(--line);background:#fff;padding:8px 16px;border-radius:20px;font-weight:600;cursor:pointer;color:var(--muted);}
+  .tabs button.on{background:var(--purple2);color:#fff;border-color:var(--purple2);}
+  .pcard{background:#fff;border:1px solid var(--line);border-radius:14px;padding:18px;margin-bottom:14px;}
+  .pcard h3{font-size:17px;font-weight:800;}
+  .pcard .meta{color:var(--muted);font-size:13px;margin:4px 0 10px;}
+  .pcard .row{display:flex;gap:14px;flex-wrap:wrap;font-size:13px;margin-bottom:10px;}
+  .pcard .row b{color:var(--purple2);}
+  .acts{display:flex;gap:10px;}
+  .acts button{border:none;padding:9px 18px;border-radius:8px;font-weight:700;cursor:pointer;}
+  .approve{background:var(--green);color:#fff;}
+  .reject{background:#fff;color:#b00;border:1.5px solid #e0b4b4;}
+</style>
+</head>
+<body>
+  <div class="nav">
+    <div class="brand"><a href="/">Nest<span style="color:#c9c3f7">Us</span></a> <span style="font-size:13px;font-weight:500;opacity:.8">Admin</span></div>
+    <div class="navlinks"><a href="/">← Back to site</a></div>
+  </div>
+
+  <div class="admin-wrap">
+    <div class="keybar">
+      <span style="font-weight:700">Admin key:</span>
+      <input id="key" type="password" placeholder="Enter admin key">
+      <button onclick="connect()">Connect</button>
+    </div>
+
+    <div id="panel" style="display:none">
+      <div class="tabs">
+        <button id="tab-pending" class="on" onclick="show('pending')">Pending listings</button>
+        <button id="tab-enq" onclick="show('enq')">Enquiries</button>
+      </div>
+      <div id="list"></div>
+    </div>
+  </div>
+
+  <div class="toast" id="toast"></div>
+<script>
+  let KEY = '';
+  let tab = 'pending';
+  const $ = id => document.getElementById(id);
+  const money = n => '₹' + Number(n).toLocaleString('en-IN');
+  function toast(m){ const t=$('toast'); t.textContent=m; t.classList.add('show'); clearTimeout(t._t); t._t=setTimeout(()=>t.classList.remove('show'),2500); }
+
+  async function connect(){
+    KEY = $('key').value.trim();
+    const r = await fetch('/api/admin/pending?key=' + encodeURIComponent(KEY));
+    if (r.status === 401) { toast('Wrong admin key'); return; }
+    $('panel').style.display = 'block';
+    show('pending');
+  }
+  function show(t){
+    tab = t;
+    $('tab-pending').classList.toggle('on', t==='pending');
+    $('tab-enq').classList.toggle('on', t==='enq');
+    t==='pending' ? loadPending() : loadEnquiries();
+  }
+  async function loadPending(){
+    const list = await fetch('/api/admin/pending?key=' + encodeURIComponent(KEY)).then(r=>r.json());
+    if (!list.length){ $('list').innerHTML = '<div class="empty">No listings waiting for review. 🎉</div>'; return; }
+    $('list').innerHTML = list.map(l => `
+      <div class="pcard">
+        <h3>${l.name}</h3>
+        <div class="meta">📍 ${l.area || '—'}, ${l.city} ${l.nearCollege ? '· near ' + l.nearCollege : ''}</div>
+        <div class="row"><span><b>For:</b> ${l.gender}</span><span><b>Rent:</b> ${money(l.startingRent)}/mo</span><span><b>Food:</b> ${l.foodIncluded?'Yes':'No'}</span><span><b>Phone:</b> ${l.contactPhone||'—'}</span></div>
+        ${l.description ? `<div style="font-size:13px;color:var(--muted);margin-bottom:10px">${l.description}</div>` : ''}
+        ${l.amenities && l.amenities.length ? `<div class="tagrow">${l.amenities.map(a=>'<span class=tag>'+a+'</span>').join('')}</div>` : ''}
+        <div class="acts">
+          <button class="approve" onclick="act(${l.id},'approve')">✓ Approve &amp; publish</button>
+          <button class="reject" onclick="act(${l.id},'reject')">Reject</button>
+        </div>
+      </div>`).join('');
+  }
+  async function loadEnquiries(){
+    const list = await fetch('/api/admin/enquiries?key=' + encodeURIComponent(KEY)).then(r=>r.json());
+    if (!list.length){ $('list').innerHTML = '<div class="empty">No enquiries yet.</div>'; return; }
+    $('list').innerHTML = list.slice().reverse().map(e => `
+      <div class="pcard">
+        <h3>${e.name} <span style="font-weight:500;color:var(--muted);font-size:13px">→ ${e.listingName||('listing #'+e.listingId)}</span></h3>
+        <div class="meta">📞 ${e.phone} · ${new Date(e.createdAt).toLocaleString('en-IN')}</div>
+        ${e.message ? `<div style="font-size:13px">${e.message}</div>` : ''}
+      </div>`).join('');
+  }
+  async function act(id, action){
+    await fetch(`/api/admin/listings/${id}/${action}?key=` + encodeURIComponent(KEY), { method:'POST' });
+    toast(action === 'approve' ? 'Published!' : 'Rejected');
+    loadPending();
+  }
+</script>
+</body>
+</html>

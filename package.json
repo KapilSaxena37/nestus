@@ -1,0 +1,13 @@
+{
+  "name": "nestus",
+  "version": "1.0.0",
+  "description": "NestUs — hostel & PG finder for students in India",
+  "type": "module",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
