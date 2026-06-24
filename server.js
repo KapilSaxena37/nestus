@@ -28,7 +28,9 @@ const MIME = {
 
 function send(res, status, body, type = 'application/json') {
   res.writeHead(status, { 'Content-Type': type });
-  res.end(typeof body === 'string' ? body : JSON.stringify(body));
+  // Strings and Buffers (static files) go out as-is; objects become JSON.
+  if (typeof body === 'string' || Buffer.isBuffer(body)) res.end(body);
+  else res.end(JSON.stringify(body));
 }
 
 function readBody(req) {
