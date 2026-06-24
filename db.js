@@ -74,6 +74,17 @@ async function sb(path, opts = {}) {
   const txt = await res.text();
   return txt ? JSON.parse(txt) : null;
 }
+
+const PHOTO_BUCKET = 'photos';
+async function sbUpload(name, buffer, contentType) {
+  const res = await fetch(`${SB_URL}/storage/v1/object/${PHOTO_BUCKET}/${name}`, {
+    method: 'POST',
+    headers: { apikey: SB_KEY, Authorization: `Bearer ${SB_KEY}`, 'Content-Type': contentType, 'x-upsert': 'true' },
+    body: buffer,
+  });
+  if (!res.ok) throw new Error(`Storage ${res.status}: ${await res.text()}`);
+  return `${SB_URL}/storage/v1/object/public/${PHOTO_BUCKET}/${name}`;
+}
 const rowToListing = (r) => ({ id: r.id, ...r.data });
 
 const SB = {
@@ -154,6 +165,10 @@ const SB = {
     await sb(`users?id=eq.${Number(id)}`, { method: 'PATCH', body: JSON.stringify({ data }) });
     return { id: Number(id), email, ...data };
   },
+  async uploadPhoto(buffer, contentType, ext) {
+    const name = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`;
+    return await sbUpload(name, buffer, contentType);
+  },
 };
 
 // =====================================================================
@@ -215,6 +230,13 @@ const FILE = {
     if (!u) return null;
     u.shortlist = shortlist; fileWrite(db); return u;
   },
+  async uploadPhoto(buffer, contentType, ext) {
+    const uploadDir = join(__dirname, 'public', 'uploads');
+    if (!existsSync(uploadDir)) mkdirSync(uploadDir, { recursive: true });
+    const name = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`;
+    writeFileSync(join(uploadDir, name), buffer);
+    return `/uploads/${name}`;
+  },
 };
 
 // =====================================================================
@@ -234,6 +256,7 @@ export const findUserByEmail = (...a) => impl.findUserByEmail(...a);
 export const addUser      = (...a) => impl.addUser(...a);
 export const getUserById  = (...a) => impl.getUserById(...a);
 export const setShortlist = (...a) => impl.setShortlist(...a);
+export const uploadPhoto  = (...a) => impl.uploadPhoto(...a);
 
 export async function cities() {
   const list = await impl.getListings({});

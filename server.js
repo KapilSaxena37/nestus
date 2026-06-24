@@ -7,7 +7,7 @@ import { fileURLToPath } from 'node:url';
 import {
   getListings, getListing, addListing, setStatus, getPending,
   addEnquiry, getEnquiries, cities, ensureSeed, USE_SUPABASE,
-  findUserByEmail, addUser, getUserById, setShortlist,
+  findUserByEmail, addUser, getUserById, setShortlist, uploadPhoto,
 } from './db.js';
 import {
   hashPassword, verifyPassword, signSession, verifySession,
@@ -28,7 +28,15 @@ const MIME = {
   '.json': 'application/json; charset=utf-8',
   '.svg': 'image/svg+xml',
   '.png': 'image/png',
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.webp': 'image/webp',
+  '.gif': 'image/gif',
   '.ico': 'image/x-icon',
+};
+
+const EXT_BY_TYPE = {
+  'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp', 'image/gif': 'gif',
 };
 
 function send(res, status, body, type = 'application/json') {
@@ -56,7 +64,7 @@ function publicUser(u) {
 function readBody(req) {
   return new Promise((resolve) => {
     let data = '';
-    req.on('data', c => { data += c; if (data.length > 1e6) req.destroy(); });
+    req.on('data', c => { data += c; if (data.length > 12e6) req.destroy(); }); // ~12MB cap (covers base64 photos)
     req.on('end', () => { try { resolve(data ? JSON.parse(data) : {}); } catch { resolve({}); } });
   });
 }
@@ -112,6 +120,17 @@ const server = createServer(async (req, res) => {
       // GET /api/cities
       if (path === '/api/cities' && req.method === 'GET') {
         return send(res, 200, await cities());
+      }
+
+      // POST /api/upload  (image as base64 -> stored, returns public URL)
+      if (path === '/api/upload' && req.method === 'POST') {
+        const b = await readBody(req);
+        const ext = EXT_BY_TYPE[b.contentType];
+        if (!b.dataBase64 || !ext) return send(res, 400, { error: 'Please upload a JPG, PNG, WEBP or GIF image' });
+        const buffer = Buffer.from(b.dataBase64, 'base64');
+        if (buffer.length > 5 * 1024 * 1024) return send(res, 413, { error: 'Image too large (max 5 MB)' });
+        const url = await uploadPhoto(buffer, b.contentType, ext);
+        return send(res, 201, { url });
       }
 
       // ----- Auth -----

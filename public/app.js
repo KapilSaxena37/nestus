@@ -1,5 +1,5 @@
 // ---- NestUs frontend ----
-const state = { filters: {}, chips: new Set(), currentListing: null, selectedRoom: null, user: null, authMode: 'signup' };
+const state = { filters: {}, chips: new Set(), currentListing: null, selectedRoom: null, user: null, authMode: 'signup', ownerPhotos: [], detailPhoto: 0 };
 
 const $ = (id) => document.getElementById(id);
 const api = (path, opts) => fetch(path, opts).then(r => r.json());
@@ -76,8 +76,10 @@ function cardHTML(l) {
     : `<span class="badge">${l.gender}</span>`;
   const tags = [l.gender, l.foodIncluded ? 'Food' : 'No food', l.hasAC ? 'AC' : 'Non-AC']
     .map(t => `<span class="tag">${t}</span>`).join('');
+  const photo = l.photos && l.photos[0];
+  const imgStyle = photo ? ` has-photo" style="background-image:url('${photo}')` : '';
   return `<div class="card" onclick="openDetail(${l.id})">
-    <div class="cimg">🏠${badge}</div>
+    <div class="cimg${imgStyle}">${photo ? '' : '🏠'}${badge}</div>
     <div class="cbody">
       <div class="cname">${l.name}</div>
       <div class="cmeta">📍 ${l.distance || (l.area + ', ' + l.city)}</div>
@@ -92,6 +94,7 @@ async function openDetail(id) {
   const l = await api('/api/listings/' + id);
   state.currentListing = l;
   state.selectedRoom = l.rooms && l.rooms[l.rooms.length - 1];
+  state.detailPhoto = 0;
   route('detail');
   renderDetail();
 }
@@ -105,10 +108,18 @@ function renderDetail() {
   const amen = (l.amenities || []).map(a => `<span>${a}</span>`).join('');
   const sr = state.selectedRoom || { type: '', rent: l.startingRent };
 
+  const photos = l.photos || [];
+  const main = photos[state.detailPhoto] || photos[0];
+  const galleryHTML = main
+    ? `<div class="gallery has-photo" style="background-image:url('${main}')"></div>` +
+      (photos.length > 1 ? `<div class="thumbs">${photos.map((p, i) =>
+        `<img src="${p}" class="${i === state.detailPhoto ? 'on' : ''}" onclick="setDetailPhoto(${i})">`).join('')}</div>` : '')
+    : `<div class="gallery">🏠</div>`;
+
   $('detail-content').innerHTML = `
     <div class="detail-grid">
       <div>
-        <div class="gallery">🏠</div>
+        ${galleryHTML}
         <div class="dname">${l.name}</div>
         <div class="dmeta">📍 ${l.area}, ${l.city}${l.distance ? ' · ' + l.distance : ''}
           ${l.verified ? ' · <b style="color:var(--green)">✓ Verified</b>' : ''}</div>
@@ -190,6 +201,7 @@ async function submitListing() {
     availableFrom: $('o-date').value, amenities,
     description: $('o-desc').value.trim(), contactPhone: phone, contactWhatsApp: $('o-wa').value.trim(),
     rooms: [{ type: 'Starting from', rent }],
+    photos: [...state.ownerPhotos],
   };
   const res = await api('/api/listings', {
     method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload),
@@ -197,7 +209,50 @@ async function submitListing() {
   if (res.error) return toast(res.error);
   toast('Submitted! We\'ll verify and publish it soon.');
   ['o-name', 'o-area', 'o-college', 'o-rent', 'o-phone', 'o-wa', 'o-desc'].forEach(id => $(id).value = '');
+  state.ownerPhotos = [];
+  renderPhotoPreviews();
   setTimeout(() => route('home'), 1500);
+}
+
+// ---------- PHOTO UPLOAD ----------
+function setDetailPhoto(i) { state.detailPhoto = i; renderDetail(); }
+
+function fileToBase64(file) {
+  return new Promise((resolve, reject) => {
+    const r = new FileReader();
+    r.onload = () => resolve(String(r.result).split(',')[1]); // strip data: prefix
+    r.onerror = reject;
+    r.readAsDataURL(file);
+  });
+}
+
+async function uploadPhotos(files) {
+  const status = $('o-photo-status');
+  for (const file of files) {
+    if (!file.type.startsWith('image/')) { status.textContent = 'Only image files are allowed.'; continue; }
+    if (file.size > 5 * 1024 * 1024) { status.textContent = `"${file.name}" is over 5 MB — please pick a smaller image.`; continue; }
+    status.textContent = `Uploading ${file.name}…`;
+    try {
+      const dataBase64 = await fileToBase64(file);
+      const res = await fetch('/api/upload', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ filename: file.name, contentType: file.type, dataBase64 }),
+      });
+      const data = await res.json();
+      if (!res.ok) { status.textContent = data.error || 'Upload failed'; continue; }
+      state.ownerPhotos.push(data.url);
+      renderPhotoPreviews();
+      status.textContent = `${state.ownerPhotos.length} photo(s) added.`;
+    } catch { status.textContent = 'Upload failed — please try again.'; }
+  }
+  $('o-photos').value = ''; // allow re-selecting the same file
+}
+
+function removePhoto(i) { state.ownerPhotos.splice(i, 1); renderPhotoPreviews(); }
+
+function renderPhotoPreviews() {
+  $('o-photo-previews').innerHTML = state.ownerPhotos.map((url, i) =>
+    `<div class="pp"><img src="${url}"><button onclick="removePhoto(${i})">✕</button></div>`).join('');
 }
 
 // ---------- AUTH ----------
