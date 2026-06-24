@@ -7,7 +7,12 @@ import { fileURLToPath } from 'node:url';
 import {
   getListings, getListing, addListing, setStatus, getPending,
   addEnquiry, getEnquiries, cities, ensureSeed, USE_SUPABASE,
+  findUserByEmail, addUser, getUserById, setShortlist,
 } from './db.js';
+import {
+  hashPassword, verifyPassword, signSession, verifySession,
+  parseCookies, SESSION_MAX_AGE,
+} from './auth.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PUBLIC = join(__dirname, 'public');
@@ -31,6 +36,21 @@ function send(res, status, body, type = 'application/json') {
   // Strings and Buffers (static files) go out as-is; objects become JSON.
   if (typeof body === 'string' || Buffer.isBuffer(body)) res.end(body);
   else res.end(JSON.stringify(body));
+}
+
+function setSessionCookie(res, token) {
+  res.setHeader('Set-Cookie', `nestus_session=${token}; HttpOnly; Path=/; Max-Age=${SESSION_MAX_AGE}; SameSite=Lax`);
+}
+function clearSessionCookie(res) {
+  res.setHeader('Set-Cookie', `nestus_session=; HttpOnly; Path=/; Max-Age=0; SameSite=Lax`);
+}
+async function currentUser(req) {
+  const uid = verifySession(parseCookies(req).nestus_session);
+  if (!uid) return null;
+  return await getUserById(uid);
+}
+function publicUser(u) {
+  return { id: u.id, name: u.name, email: u.email, shortlist: u.shortlist || [] };
 }
 
 function readBody(req) {
@@ -92,6 +112,55 @@ const server = createServer(async (req, res) => {
       // GET /api/cities
       if (path === '/api/cities' && req.method === 'GET') {
         return send(res, 200, await cities());
+      }
+
+      // ----- Auth -----
+      if (path === '/api/auth/signup' && req.method === 'POST') {
+        const b = await readBody(req);
+        const name = (b.name || '').trim(), email = (b.email || '').trim();
+        if (!name || !email || !b.password) return send(res, 400, { error: 'Name, email and password are required' });
+        if (!/^\S+@\S+\.\S+$/.test(email)) return send(res, 400, { error: 'Please enter a valid email' });
+        if (String(b.password).length < 6) return send(res, 400, { error: 'Password must be at least 6 characters' });
+        if (await findUserByEmail(email)) return send(res, 409, { error: 'That email is already registered — try logging in.' });
+        const { salt, hash } = hashPassword(String(b.password));
+        const user = await addUser({ email, name, salt, hash });
+        if (!user) return send(res, 409, { error: 'That email is already registered.' });
+        setSessionCookie(res, signSession(user.id));
+        return send(res, 201, publicUser(user));
+      }
+      if (path === '/api/auth/login' && req.method === 'POST') {
+        const b = await readBody(req);
+        const user = await findUserByEmail((b.email || '').trim());
+        if (!user || !verifyPassword(String(b.password || ''), user.salt, user.hash))
+          return send(res, 401, { error: 'Wrong email or password' });
+        setSessionCookie(res, signSession(user.id));
+        return send(res, 200, publicUser(user));
+      }
+      if (path === '/api/auth/logout' && req.method === 'POST') {
+        clearSessionCookie(res);
+        return send(res, 200, { ok: true });
+      }
+      if (path === '/api/auth/me' && req.method === 'GET') {
+        const u = await currentUser(req);
+        return send(res, 200, u ? publicUser(u) : { user: null });
+      }
+
+      // ----- Shortlist (requires login) -----
+      if (path === '/api/me/shortlist' && req.method === 'POST') {
+        const u = await currentUser(req);
+        if (!u) return send(res, 401, { error: 'Please sign in to save hostels' });
+        const b = await readBody(req);
+        const lid = Number(b.listingId);
+        let sl = u.shortlist || [];
+        sl = sl.includes(lid) ? sl.filter(x => x !== lid) : [...sl, lid];
+        const updated = await setShortlist(u.id, sl);
+        return send(res, 200, { shortlist: updated.shortlist });
+      }
+      if (path === '/api/me/shortlist' && req.method === 'GET') {
+        const u = await currentUser(req);
+        if (!u) return send(res, 401, { error: 'Please sign in' });
+        const all = await Promise.all((u.shortlist || []).map(id => getListing(id)));
+        return send(res, 200, all.filter(Boolean));
       }
 
       // ----- Admin (requires key) -----

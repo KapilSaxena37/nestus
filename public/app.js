@@ -1,5 +1,5 @@
 // ---- NestUs frontend ----
-const state = { filters: {}, chips: new Set(), currentListing: null, selectedRoom: null };
+const state = { filters: {}, chips: new Set(), currentListing: null, selectedRoom: null, user: null, authMode: 'signup' };
 
 const $ = (id) => document.getElementById(id);
 const api = (path, opts) => fetch(path, opts).then(r => r.json());
@@ -130,6 +130,7 @@ function renderDetail() {
           ${rooms || '<div style="color:var(--muted);font-size:13px">Contact owner for room details.</div>'}
           <div style="font-size:13px;color:var(--muted);margin:12px 0">Selected: <b id="sel-label">${sr.type ? sr.type + ' — ' + money(sr.rent) + '/mo' : money(l.startingRent) + '/mo'}</b></div>
           <button class="btn" onclick="openContact()">Contact owner</button>
+          <button class="btn alt" id="save-btn" onclick="toggleSave(${l.id})">${isSaved(l.id) ? '♥ Saved' : '♡ Save'}</button>
           <div class="note">Phone &amp; WhatsApp · online booking coming soon</div>
         </div>
       </div>
@@ -199,4 +200,103 @@ async function submitListing() {
   setTimeout(() => route('home'), 1500);
 }
 
+// ---------- AUTH ----------
+async function loadAuthState() {
+  try {
+    const r = await fetch('/api/auth/me');
+    const data = await r.json();
+    state.user = data && data.id ? data : null;
+  } catch { state.user = null; }
+  updateNav();
+}
+
+function updateNav() {
+  const loggedIn = !!state.user;
+  $('nav-login').style.display = loggedIn ? 'none' : '';
+  $('nav-signup').style.display = loggedIn ? 'none' : '';
+  $('nav-saved').style.display = loggedIn ? '' : 'none';
+  $('nav-user').style.display = loggedIn ? 'inline-flex' : 'none';
+  if (loggedIn) {
+    $('nav-username').textContent = 'Hi, ' + state.user.name.split(' ')[0];
+    const n = (state.user.shortlist || []).length;
+    $('nav-saved').textContent = n ? `♥ Saved (${n})` : '♥ Saved';
+  }
+}
+
+function isSaved(id) { return !!state.user && (state.user.shortlist || []).includes(id); }
+
+function openAuth(mode) {
+  state.authMode = mode;
+  switchAuthTab(mode);
+  $('auth-err').style.display = 'none';
+  $('au-name').value = ''; $('au-email').value = ''; $('au-pass').value = '';
+  $('auth-modal').classList.add('show');
+}
+function closeAuth() { $('auth-modal').classList.remove('show'); }
+
+function switchAuthTab(mode) {
+  state.authMode = mode;
+  $('at-signup').classList.toggle('on', mode === 'signup');
+  $('at-login').classList.toggle('on', mode === 'login');
+  $('auth-name-field').style.display = mode === 'signup' ? 'block' : 'none';
+  $('auth-submit').textContent = mode === 'signup' ? 'Create account' : 'Log in';
+  $('auth-sub').textContent = mode === 'signup'
+    ? 'Create a free account to save hostels you like.'
+    : 'Welcome back — log in to your account.';
+  $('auth-err').style.display = 'none';
+}
+
+async function submitAuth() {
+  const email = $('au-email').value.trim(), password = $('au-pass').value;
+  const err = $('auth-err');
+  const body = { email, password };
+  if (state.authMode === 'signup') body.name = $('au-name').value.trim();
+  const res = await fetch('/api/auth/' + state.authMode, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+  });
+  const data = await res.json();
+  if (!res.ok) { err.textContent = data.error || 'Something went wrong'; err.style.display = 'block'; return; }
+  state.user = data;
+  updateNav();
+  closeAuth();
+  toast(state.authMode === 'signup' ? 'Welcome to NestUs, ' + data.name.split(' ')[0] + '!' : 'Logged in');
+  if (state.currentListing) renderDetail(); // refresh Save button if on a listing
+}
+
+async function doLogout() {
+  await fetch('/api/auth/logout', { method: 'POST' });
+  state.user = null;
+  updateNav();
+  toast('Logged out');
+  if (document.getElementById('v-saved').classList.contains('show')) route('home');
+  if (state.currentListing && document.getElementById('v-detail').classList.contains('show')) renderDetail();
+}
+
+async function toggleSave(id) {
+  if (!state.user) { openAuth('signup'); $('auth-sub').textContent = 'Create a free account to save this hostel.'; return; }
+  const res = await fetch('/api/me/shortlist', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ listingId: id }),
+  });
+  const data = await res.json();
+  if (!res.ok) return toast(data.error || 'Could not save');
+  state.user.shortlist = data.shortlist;
+  updateNav();
+  renderDetail();
+  toast(isSaved(id) ? 'Saved to your list' : 'Removed from saved');
+}
+
+function goSaved() { route('saved'); loadSaved(); }
+
+async function loadSaved() {
+  const res = await fetch('/api/me/shortlist');
+  if (!res.ok) { route('home'); return openAuth('login'); }
+  const list = await res.json();
+  if (!list.length) {
+    $('saved-cards').innerHTML = `<div class="empty">You haven't saved any hostels yet.<br>Tap <b>♡ Save</b> on a listing to keep it here.</div>`;
+    return;
+  }
+  $('saved-cards').innerHTML = list.map(cardHTML).join('');
+}
+
 initHome();
+loadAuthState();

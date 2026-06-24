@@ -16,8 +16,13 @@ const DATA_DIR = join(__dirname, 'data');
 const DB_FILE = join(DATA_DIR, 'db.json');
 const SEED_FILE = join(DATA_DIR, 'seed.json');
 
-const SB_URL = process.env.SUPABASE_URL;
-const SB_KEY = process.env.SUPABASE_KEY;
+// Sanitize the URL: strip trailing slashes and an accidental /rest/v1 suffix,
+// so the value is just https://<project>.supabase.co
+const SB_URL = (process.env.SUPABASE_URL || '')
+  .trim()
+  .replace(/\/+$/, '')
+  .replace(/\/rest\/v1$/, '');
+const SB_KEY = (process.env.SUPABASE_KEY || '').trim();
 export const USE_SUPABASE = !!(SB_URL && SB_KEY);
 
 function loadSeed() {
@@ -117,6 +122,38 @@ const SB = {
     const rows = await sb('enquiries?select=id,data');
     return rows.map(r => ({ id: r.id, ...r.data }));
   },
+  // ---- Users ----
+  async findUserByEmail(email) {
+    const rows = await sb(`users?email=eq.${encodeURIComponent(email.toLowerCase())}&select=id,email,data`);
+    return rows.length ? { id: rows[0].id, email: rows[0].email, ...rows[0].data } : null;
+  },
+  async addUser({ email, name, salt, hash }) {
+    try {
+      const row = (await sb('users', {
+        method: 'POST', headers: { Prefer: 'return=representation' },
+        body: JSON.stringify({
+          email: email.toLowerCase(),
+          data: { name, salt, hash, shortlist: [], createdAt: new Date().toISOString() },
+        }),
+      }))[0];
+      return { id: row.id, email: row.email, ...row.data };
+    } catch (e) {
+      if (/409|duplicate|unique/i.test(String(e))) return null; // email taken
+      throw e;
+    }
+  },
+  async getUserById(id) {
+    const rows = await sb(`users?id=eq.${Number(id)}&select=id,email,data`);
+    return rows.length ? { id: rows[0].id, email: rows[0].email, ...rows[0].data } : null;
+  },
+  async setShortlist(id, shortlist) {
+    const u = await SB.getUserById(id);
+    if (!u) return null;
+    const { id: _i, email, ...data } = u;
+    data.shortlist = shortlist;
+    await sb(`users?id=eq.${Number(id)}`, { method: 'PATCH', body: JSON.stringify({ data }) });
+    return { id: Number(id), email, ...data };
+  },
 };
 
 // =====================================================================
@@ -126,10 +163,15 @@ function fileEnsure() {
   if (!existsSync(DATA_DIR)) mkdirSync(DATA_DIR, { recursive: true });
   if (!existsSync(DB_FILE)) {
     const listings = loadSeed().map((s, i) => ({ id: i + 1, ...s }));
-    writeFileSync(DB_FILE, JSON.stringify({ listings, enquiries: [], nextId: listings.length + 1 }, null, 2));
+    writeFileSync(DB_FILE, JSON.stringify({ listings, enquiries: [], users: [], nextId: listings.length + 1 }, null, 2));
   }
 }
-const fileRead = () => { fileEnsure(); return JSON.parse(readFileSync(DB_FILE, 'utf8')); };
+const fileRead = () => {
+  fileEnsure();
+  const db = JSON.parse(readFileSync(DB_FILE, 'utf8'));
+  if (!db.users) db.users = []; // migrate older db.json files
+  return db;
+};
 const fileWrite = (db) => writeFileSync(DB_FILE, JSON.stringify(db, null, 2));
 
 const FILE = {
@@ -155,6 +197,24 @@ const FILE = {
     db.enquiries.push(e); fileWrite(db); return e;
   },
   async getEnquiries() { return fileRead().enquiries; },
+  // ---- Users ----
+  async findUserByEmail(email) {
+    return fileRead().users.find(u => u.email.toLowerCase() === email.toLowerCase()) || null;
+  },
+  async addUser({ email, name, salt, hash }) {
+    const db = fileRead();
+    if (db.users.find(u => u.email.toLowerCase() === email.toLowerCase())) return null;
+    const id = db.users.reduce((m, u) => Math.max(m, u.id), 0) + 1;
+    const user = { id, email: email.toLowerCase(), name, salt, hash, shortlist: [], createdAt: new Date().toISOString() };
+    db.users.push(user); fileWrite(db); return user;
+  },
+  async getUserById(id) { return fileRead().users.find(u => u.id === Number(id)) || null; },
+  async setShortlist(id, shortlist) {
+    const db = fileRead();
+    const u = db.users.find(x => x.id === Number(id));
+    if (!u) return null;
+    u.shortlist = shortlist; fileWrite(db); return u;
+  },
 };
 
 // =====================================================================
@@ -170,6 +230,10 @@ export const setStatus    = (...a) => impl.setStatus(...a);
 export const getPending   = (...a) => impl.getPending(...a);
 export const addEnquiry   = (...a) => impl.addEnquiry(...a);
 export const getEnquiries = (...a) => impl.getEnquiries(...a);
+export const findUserByEmail = (...a) => impl.findUserByEmail(...a);
+export const addUser      = (...a) => impl.addUser(...a);
+export const getUserById  = (...a) => impl.getUserById(...a);
+export const setShortlist = (...a) => impl.setShortlist(...a);
 
 export async function cities() {
   const list = await impl.getListings({});

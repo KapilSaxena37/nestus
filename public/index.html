@@ -12,7 +12,13 @@
     <div class="navlinks">
       <a onclick="route('home')">Home</a>
       <a onclick="route('list')">List your property</a>
-      <button class="signup">Sign up</button>
+      <a id="nav-saved" style="display:none" onclick="goSaved()">♥ Saved</a>
+      <button class="signup" id="nav-login" onclick="openAuth('login')">Log in</button>
+      <button class="signup" id="nav-signup" onclick="openAuth('signup')">Sign up</button>
+      <span id="nav-user" style="display:none;align-items:center;gap:10px;">
+        <span id="nav-username" style="color:#fff;font-weight:700;font-size:14px;"></span>
+        <button class="signup" onclick="doLogout()">Log out</button>
+      </span>
     </div>
   </div>
 
@@ -63,6 +69,13 @@
     <section id="v-detail" class="view">
       <button class="back" onclick="route('results')">← Back to results</button>
       <div id="detail-content"></div>
+    </section>
+
+    <!-- SAVED -->
+    <section id="v-saved" class="view">
+      <button class="back" onclick="route('home')">← Home</button>
+      <div class="rhead"><h2>Your saved hostels</h2></div>
+      <div class="cards" id="saved-cards"></div>
     </section>
 
     <!-- LIST YOUR PROPERTY -->
@@ -131,6 +144,23 @@
         <p class="s">The owner will get your details and reach out. You can also call or WhatsApp them directly.</p>
         <button class="btn" onclick="closeModal()">Done</button>
       </div>
+    </div>
+  </div>
+
+  <!-- Auth modal -->
+  <div class="modal-bg" id="auth-modal">
+    <div class="modal">
+      <div class="authtabs">
+        <button id="at-signup" class="authtab on" onclick="switchAuthTab('signup')">Sign up</button>
+        <button id="at-login" class="authtab" onclick="switchAuthTab('login')">Log in</button>
+      </div>
+      <p class="s" id="auth-sub" style="color:var(--muted);font-size:13px;margin-bottom:14px"></p>
+      <div class="field" id="auth-name-field"><label>Your name</label><input id="au-name" autocomplete="name"></div>
+      <div class="field"><label>Email</label><input id="au-email" type="email" autocomplete="email"></div>
+      <div class="field"><label>Password</label><input id="au-pass" type="password" placeholder="at least 6 characters" autocomplete="current-password"></div>
+      <div id="auth-err" style="color:#b00;font-size:13px;margin-bottom:10px;display:none"></div>
+      <button class="btn" id="auth-submit" onclick="submitAuth()">Create account</button>
+      <button class="back" style="margin-top:10px;display:block" onclick="closeAuth()">Cancel</button>
     </div>
   </div>
 
