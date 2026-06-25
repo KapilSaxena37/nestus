@@ -1,5 +1,8 @@
 // ---- NestUs frontend ----
-const state = { filters: {}, chips: new Set(), currentListing: null, selectedRoom: null, user: null, authMode: 'signup', ownerPhotos: [], detailPhoto: 0 };
+const state = { filters: {}, chips: new Set(), currentListing: null, selectedRoom: null, user: null, authMode: 'signup', authRole: 'student', ownerPhotos: [], detailPhoto: 0, editId: null, ownerLat: null, ownerLng: null };
+
+const CITY_COORDS = { Nagpur: [21.1458, 79.0882], Indore: [22.7196, 75.8577] };
+let _mapView = null, _pickMap = null, _pickMarker = null;
 
 const $ = (id) => document.getElementById(id);
 const api = (path, opts) => fetch(path, opts).then(r => r.json());
@@ -134,6 +137,7 @@ function renderDetail() {
         <div class="sec" style="font-size:16px;margin:18px 0 8px">Amenities</div>
         <div class="amen">${amen || '<span>—</span>'}</div>
         ${l.rules ? `<div class="sec" style="font-size:16px;margin:18px 0 8px">House rules</div><div style="color:var(--muted);font-size:13px;line-height:1.7">${l.rules}</div>` : ''}
+        ${reviewsHTML(l)}
       </div>
       <div>
         <div class="bookbox">
@@ -141,6 +145,7 @@ function renderDetail() {
           ${rooms || '<div style="color:var(--muted);font-size:13px">Contact owner for room details.</div>'}
           <div style="font-size:13px;color:var(--muted);margin:12px 0">Selected: <b id="sel-label">${sr.type ? sr.type + ' — ' + money(sr.rent) + '/mo' : money(l.startingRent) + '/mo'}</b></div>
           <button class="btn" onclick="openContact()">Contact owner</button>
+          ${l.ownerId && (!state.user || state.user.id !== l.ownerId) ? `<button class="btn alt" onclick="messageOwner(${l.ownerId}, ${l.id})">💬 Message owner</button>` : ''}
           <button class="btn alt" id="save-btn" onclick="toggleSave(${l.id})">${isSaved(l.id) ? '♥ Saved' : '♡ Save'}</button>
           <div class="note">Phone &amp; WhatsApp · online booking coming soon</div>
         </div>
@@ -151,6 +156,46 @@ function renderDetail() {
 function selRoom(i) {
   state.selectedRoom = state.currentListing.rooms[i];
   renderDetail();
+}
+
+function reviewsHTML(l) {
+  const rl = l.reviewList || [];
+  const form = state.user
+    ? `<div class="reviewform">
+        <div style="font-size:13px;font-weight:700;margin-bottom:6px">Rate this place</div>
+        <select id="rv-rating">
+          <option value="5">★★★★★ Excellent</option>
+          <option value="4">★★★★ Good</option>
+          <option value="3">★★★ Okay</option>
+          <option value="2">★★ Poor</option>
+          <option value="1">★ Bad</option>
+        </select>
+        <textarea id="rv-text" placeholder="Share your experience (optional)"></textarea>
+        <button class="btn alt" onclick="submitReview(${l.id})">Post review</button>
+      </div>`
+    : `<div style="font-size:13px;color:var(--muted)">Please <a style="color:var(--purple2);font-weight:700;cursor:pointer" onclick="openAuth('login')">log in</a> to leave a review.</div>`;
+  const items = rl.length
+    ? rl.slice().reverse().map(r => `<div class="reviewitem">
+        <div><b>${r.name}</b> <span class="stars">${starStr(r.rating)}</span></div>
+        ${r.text ? `<div style="font-size:13px;margin-top:3px">${r.text}</div>` : ''}
+        <div style="font-size:11px;color:var(--muted);margin-top:2px">${fmtDate(r.createdAt)}</div>
+      </div>`).join('')
+    : `<div style="font-size:13px;color:var(--muted)">No reviews yet — be the first.</div>`;
+  return `<div class="sec" style="font-size:16px;margin:22px 0 10px">Reviews ${rl.length ? `(${rl.length})` : ''}</div>${form}${items}`;
+}
+
+async function submitReview(id) {
+  const rating = $('rv-rating').value;
+  const text = $('rv-text').value.trim();
+  const res = await fetch('/api/listings/' + id + '/reviews', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ rating, text }),
+  });
+  const data = await res.json();
+  if (!res.ok) return toast(data.error || 'Could not post review');
+  state.currentListing = data;
+  renderDetail();
+  toast('Thanks for your review!');
 }
 function fmtDate(d) {
   if (!d) return '—';
@@ -203,15 +248,25 @@ async function submitListing() {
     rooms: [{ type: 'Starting from', rent }],
     photos: [...state.ownerPhotos],
   };
-  const res = await api('/api/listings', {
-    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload),
+  if (state.ownerLat != null && state.ownerLng != null) { payload.lat = state.ownerLat; payload.lng = state.ownerLng; }
+  const editing = !!state.editId;
+  const res = await api(editing ? '/api/listings/' + state.editId : '/api/listings', {
+    method: editing ? 'PATCH' : 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
   });
   if (res.error) return toast(res.error);
-  toast('Submitted! We\'ll verify and publish it soon.');
   ['o-name', 'o-area', 'o-college', 'o-rent', 'o-phone', 'o-wa', 'o-desc'].forEach(id => $(id).value = '');
   state.ownerPhotos = [];
   renderPhotoPreviews();
-  setTimeout(() => route('home'), 1500);
+  if (editing) {
+    state.editId = null;
+    toast('Changes saved — sent for re-verification.');
+    setTimeout(goDash, 1000);
+  } else {
+    toast('Submitted! We\'ll verify and publish it soon.');
+    setTimeout(() => state.user && state.user.role === 'owner' ? goDash() : route('home'), 1200);
+  }
 }
 
 // ---------- PHOTO UPLOAD ----------
@@ -267,15 +322,25 @@ async function loadAuthState() {
 
 function updateNav() {
   const loggedIn = !!state.user;
+  const isOwner = loggedIn && state.user.role === 'owner';
   $('nav-login').style.display = loggedIn ? 'none' : '';
   $('nav-signup').style.display = loggedIn ? 'none' : '';
-  $('nav-saved').style.display = loggedIn ? '' : 'none';
   $('nav-user').style.display = loggedIn ? 'inline-flex' : 'none';
+  $('nav-dash').style.display = isOwner ? '' : 'none';
+  $('nav-list').style.display = isOwner ? 'none' : '';      // owners add via dashboard
+  $('nav-messages').style.display = loggedIn ? '' : 'none';
+  $('nav-saved').style.display = loggedIn && !isOwner ? '' : 'none';
   if (loggedIn) {
     $('nav-username').textContent = 'Hi, ' + state.user.name.split(' ')[0];
     const n = (state.user.shortlist || []).length;
     $('nav-saved').textContent = n ? `♥ Saved (${n})` : '♥ Saved';
   }
+}
+
+function pickRole(role) {
+  state.authRole = role;
+  $('role-student').classList.toggle('on', role === 'student');
+  $('role-owner').classList.toggle('on', role === 'owner');
 }
 
 function isSaved(id) { return !!state.user && (state.user.shortlist || []).includes(id); }
@@ -294,9 +359,10 @@ function switchAuthTab(mode) {
   $('at-signup').classList.toggle('on', mode === 'signup');
   $('at-login').classList.toggle('on', mode === 'login');
   $('auth-name-field').style.display = mode === 'signup' ? 'block' : 'none';
+  $('auth-role-field').style.display = mode === 'signup' ? 'block' : 'none';
   $('auth-submit').textContent = mode === 'signup' ? 'Create account' : 'Log in';
   $('auth-sub').textContent = mode === 'signup'
-    ? 'Create a free account to save hostels you like.'
+    ? 'Create a free account — students save hostels, owners list properties.'
     : 'Welcome back — log in to your account.';
   $('auth-err').style.display = 'none';
 }
@@ -305,17 +371,19 @@ async function submitAuth() {
   const email = $('au-email').value.trim(), password = $('au-pass').value;
   const err = $('auth-err');
   const body = { email, password };
-  if (state.authMode === 'signup') body.name = $('au-name').value.trim();
+  if (state.authMode === 'signup') { body.name = $('au-name').value.trim(); body.role = state.authRole; }
   const res = await fetch('/api/auth/' + state.authMode, {
     method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
   });
   const data = await res.json();
   if (!res.ok) { err.textContent = data.error || 'Something went wrong'; err.style.display = 'block'; return; }
+  const wasSignup = state.authMode === 'signup';
   state.user = data;
   updateNav();
   closeAuth();
-  toast(state.authMode === 'signup' ? 'Welcome to NestUs, ' + data.name.split(' ')[0] + '!' : 'Logged in');
-  if (state.currentListing) renderDetail(); // refresh Save button if on a listing
+  toast(wasSignup ? 'Welcome to NestUs, ' + data.name.split(' ')[0] + '!' : 'Logged in');
+  if (data.role === 'owner') goDash();
+  else if (state.currentListing) renderDetail(); // refresh Save button if on a listing
 }
 
 async function doLogout() {
@@ -351,6 +419,224 @@ async function loadSaved() {
     return;
   }
   $('saved-cards').innerHTML = list.map(cardHTML).join('');
+}
+
+// ---------- MESSAGING ----------
+let _threadPoll = null;
+
+function goMessages() { route('messages'); loadConversations(); }
+
+async function loadConversations() {
+  const res = await fetch('/api/messages');
+  if (!res.ok) { route('home'); return openAuth('login'); }
+  const list = await res.json();
+  $('convo-list').innerHTML = list.length ? list.map(c =>
+    `<div class="dash-card" style="cursor:pointer" onclick="openThread(${c.listingId}, ${c.otherId}, '${escapeJs(c.otherName)}', '${escapeJs(c.listingName)}')">
+      <div class="dash-main">
+        <div class="dn">${c.otherName} <span style="font-weight:500;color:var(--muted);font-size:13px">· ${c.listingName}</span></div>
+        <div class="dm" style="margin-top:4px">${c.lastText}</div>
+        <div style="font-size:11px;color:var(--muted)">${fmtDateTime(c.lastAt)}</div>
+      </div>
+    </div>`).join('') : `<div class="empty">No messages yet.<br>Open a listing and tap <b>💬 Message owner</b> to start a conversation.</div>`;
+}
+
+function escapeJs(s) { return String(s || '').replace(/'/g, "\\'").replace(/"/g, '&quot;'); }
+function fmtDateTime(d) { try { return new Date(d).toLocaleString('en-IN'); } catch { return ''; } }
+
+function messageOwner(ownerId, listingId) {
+  if (!state.user) { openAuth('login'); return; }
+  openThread(listingId, ownerId, (state.currentListing && state.currentListing.ownerName) || 'Owner',
+    (state.currentListing && state.currentListing.name) || 'listing');
+}
+
+function openThread(listingId, withId, name, listingName) {
+  state.thread = { listingId, withId, name, listingName };
+  $('thread-title').textContent = name;
+  $('thread-sub').textContent = 'About: ' + listingName;
+  $('thread-modal').classList.add('show');
+  loadThread();
+  clearInterval(_threadPoll);
+  _threadPoll = setInterval(loadThread, 4000);
+}
+
+function closeThread() {
+  clearInterval(_threadPoll); _threadPoll = null;
+  $('thread-modal').classList.remove('show');
+  if (document.getElementById('v-messages').classList.contains('show')) loadConversations();
+}
+
+async function loadThread() {
+  const t = state.thread; if (!t) return;
+  const res = await fetch(`/api/messages/thread?listingId=${t.listingId}&withId=${t.withId}`);
+  if (!res.ok) return;
+  const msgs = await res.json();
+  const box = $('thread-messages');
+  box.innerHTML = msgs.length ? msgs.map(m =>
+    `<div class="bubble ${m.mine ? 'mine' : 'theirs'}">${m.text}<div class="bt">${fmtDateTime(m.createdAt)}</div></div>`
+  ).join('') : '<div style="color:var(--muted);font-size:13px;text-align:center;padding:20px">Say hello to start the conversation.</div>';
+  box.scrollTop = box.scrollHeight;
+}
+
+async function sendMessage() {
+  const t = state.thread; if (!t) return;
+  const input = $('thread-input');
+  const text = input.value.trim();
+  if (!text) return;
+  input.value = '';
+  const res = await fetch('/api/messages', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ listingId: t.listingId, toId: t.withId, text }),
+  });
+  const data = await res.json();
+  if (!res.ok) { toast(data.error || 'Could not send'); input.value = text; return; }
+  loadThread();
+}
+
+// ---------- MAP ----------
+function coordsFor(l, i = 0) {
+  if (typeof l.lat === 'number' && typeof l.lng === 'number') return [l.lat, l.lng];
+  const base = CITY_COORDS[l.city] || CITY_COORDS.Nagpur;
+  // deterministic small spread so listings without a pin don't stack
+  return [base[0] + ((l.id * 7) % 20 - 10) / 700, base[1] + ((l.id * 13) % 20 - 10) / 700];
+}
+
+async function goMap() {
+  route('map');
+  const list = await api('/api/listings');
+  if (!_mapView) {
+    _mapView = L.map('map').setView(CITY_COORDS.Nagpur, 12);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      maxZoom: 19, attribution: '© OpenStreetMap',
+    }).addTo(_mapView);
+  } else {
+    _mapView.eachLayer(layer => { if (layer instanceof L.Marker) _mapView.removeLayer(layer); });
+  }
+  const pts = [];
+  list.forEach(l => {
+    const c = coordsFor(l);
+    pts.push(c);
+    L.marker(c).addTo(_mapView).bindPopup(
+      `<b>${l.name}</b><br>${money(l.startingRent)}/mo · ${l.gender}<br>` +
+      `<a href="#" onclick="closePopupAndOpen(${l.id});return false;">View details →</a>`
+    );
+  });
+  setTimeout(() => {
+    _mapView.invalidateSize();
+    if (pts.length) _mapView.fitBounds(pts, { padding: [40, 40], maxZoom: 14 });
+  }, 100);
+}
+
+function closePopupAndOpen(id) { if (_mapView) _mapView.closePopup(); openDetail(id); }
+
+function initPickMap(lat, lng) {
+  const center = (typeof lat === 'number' && typeof lng === 'number')
+    ? [lat, lng]
+    : (CITY_COORDS[$('o-city').value] || CITY_COORDS.Nagpur);
+  setTimeout(() => {
+    if (!_pickMap) {
+      _pickMap = L.map('pickmap').setView(center, 13);
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '© OpenStreetMap' }).addTo(_pickMap);
+      _pickMap.on('click', e => setPin(e.latlng.lat, e.latlng.lng));
+    } else {
+      _pickMap.setView(center, 13);
+    }
+    _pickMap.invalidateSize();
+    if (_pickMarker) { _pickMap.removeLayer(_pickMarker); _pickMarker = null; }
+    if (typeof lat === 'number' && typeof lng === 'number') setPin(lat, lng);
+  }, 120);
+}
+
+function setPin(lat, lng) {
+  state.ownerLat = Math.round(lat * 1e6) / 1e6;
+  state.ownerLng = Math.round(lng * 1e6) / 1e6;
+  if (_pickMarker) _pickMap.removeLayer(_pickMarker);
+  _pickMarker = L.marker([lat, lng]).addTo(_pickMap);
+  $('pickmap-status').textContent = `Pin set ✓ (${state.ownerLat}, ${state.ownerLng})`;
+}
+
+// ---------- OWNER DASHBOARD ----------
+function goDash() { route('dashboard'); loadDashboard(); }
+
+async function loadDashboard() {
+  const [listings, enquiries] = await Promise.all([
+    fetch('/api/me/listings').then(r => r.ok ? r.json() : []),
+    fetch('/api/me/owner-enquiries').then(r => r.ok ? r.json() : []),
+  ]);
+
+  $('dash-listings').innerHTML = listings.length ? listings.map(l => {
+    const photo = l.photos && l.photos[0];
+    const st = l.status || 'pending';
+    const avail = l.available === false;
+    return `<div class="dash-card">
+      <div class="dash-thumb" style="${photo ? `background-image:url('${photo}')` : ''}">${photo ? '' : '🏠'}</div>
+      <div class="dash-main">
+        <div class="dn">${l.name}</div>
+        <div class="dm">${l.area || ''}${l.area ? ', ' : ''}${l.city} · ${money(l.startingRent)}/mo onwards</div>
+        <span class="statusbadge st-${st}">${st === 'approved' ? '✓ Live' : st === 'pending' ? '⏳ Awaiting review' : 'Rejected'}</span>
+        ${avail ? '<span class="statusbadge st-rejected" style="margin-left:6px">Marked full</span>' : ''}
+        <div class="dash-acts">
+          <button class="primary" onclick="editListing(${l.id})">Edit</button>
+          <button onclick="toggleAvailability(${l.id}, ${l.available === false})">${avail ? 'Mark available' : 'Mark full'}</button>
+        </div>
+      </div>
+    </div>`;
+  }).join('') : `<div class="empty">You haven't added any properties yet.<br>Click <b>+ Add a property</b> to list your first one.</div>`;
+
+  $('dash-enquiries').innerHTML = enquiries.length ? enquiries.slice().reverse().map(e =>
+    `<div class="dash-card"><div class="dash-main">
+      <div class="dn">${e.name} <span style="font-weight:500;color:var(--muted);font-size:13px">→ ${e.listingName || ('listing #' + e.listingId)}</span></div>
+      <div class="dm">📞 ${e.phone} · ${new Date(e.createdAt).toLocaleString('en-IN')}</div>
+      ${e.message ? `<div style="font-size:13px">${e.message}</div>` : ''}
+    </div></div>`).join('') : `<div class="empty">No enquiries yet.</div>`;
+}
+
+async function toggleAvailability(id, makeAvailable) {
+  await fetch('/api/listings/' + id, {
+    method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ available: makeAvailable }),
+  });
+  toast(makeAvailable ? 'Marked available' : 'Marked full');
+  loadDashboard();
+}
+
+function startNewListing() {
+  state.editId = null;
+  state.ownerPhotos = [];
+  ['o-name', 'o-area', 'o-college', 'o-rent', 'o-phone', 'o-wa', 'o-desc'].forEach(id => $(id).value = '');
+  renderPhotoPreviews();
+  $('list-title').textContent = 'List your property';
+  $('list-submit').textContent = 'Submit for verification';
+  state.ownerLat = null; state.ownerLng = null;
+  $('pickmap-status').textContent = 'No pin set yet.';
+  if (_pickMarker && _pickMap) { _pickMap.removeLayer(_pickMarker); _pickMarker = null; }
+  route('list');
+  initPickMap();
+}
+
+async function editListing(id) {
+  const l = await api('/api/listings/' + id);
+  state.editId = id;
+  $('o-name').value = l.name || '';
+  $('o-city').value = l.city || 'Nagpur';
+  $('o-area').value = l.area || '';
+  $('o-college').value = l.nearCollege || '';
+  $('o-gender').value = l.gender || 'Girls';
+  $('o-rent').value = l.startingRent || '';
+  $('o-date').value = l.availableFrom || '';
+  $('o-food').value = l.foodIncluded ? 'true' : 'false';
+  $('o-phone').value = l.contactPhone || '';
+  $('o-wa').value = l.contactWhatsApp || '';
+  $('o-desc').value = l.description || '';
+  document.querySelectorAll('#o-amen input').forEach(cb => { cb.checked = (l.amenities || []).includes(cb.value); });
+  state.ownerPhotos = [...(l.photos || [])];
+  renderPhotoPreviews();
+  $('list-title').textContent = 'Edit property';
+  $('list-submit').textContent = 'Save changes';
+  state.ownerLat = typeof l.lat === 'number' ? l.lat : null;
+  state.ownerLng = typeof l.lng === 'number' ? l.lng : null;
+  $('pickmap-status').textContent = state.ownerLat ? `Pin set ✓ (${l.lat}, ${l.lng})` : 'No pin set yet.';
+  route('list');
+  initPickMap(state.ownerLat, state.ownerLng);
 }
 
 initHome();

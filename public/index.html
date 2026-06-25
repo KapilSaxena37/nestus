@@ -4,6 +4,8 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>NestUs — Find your hostel or PG</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
 <link rel="stylesheet" href="/styles.css">
 </head>
 <body>
@@ -11,7 +13,10 @@
     <div class="brand" onclick="route('home')">Nest<span style="color:#c9c3f7">Us</span></div>
     <div class="navlinks">
       <a onclick="route('home')">Home</a>
-      <a onclick="route('list')">List your property</a>
+      <a onclick="goMap()">Map</a>
+      <a id="nav-dash" style="display:none" onclick="goDash()">My properties</a>
+      <a id="nav-list" onclick="startNewListing()">List your property</a>
+      <a id="nav-messages" style="display:none" onclick="goMessages()">Messages</a>
       <a id="nav-saved" style="display:none" onclick="goSaved()">♥ Saved</a>
       <button class="signup" id="nav-login" onclick="openAuth('login')">Log in</button>
       <button class="signup" id="nav-signup" onclick="openAuth('signup')">Sign up</button>
@@ -71,6 +76,13 @@
       <div id="detail-content"></div>
     </section>
 
+    <!-- MESSAGES -->
+    <section id="v-messages" class="view">
+      <button class="back" onclick="route('home')">← Home</button>
+      <div class="rhead"><h2>Messages</h2></div>
+      <div id="convo-list"></div>
+    </section>
+
     <!-- SAVED -->
     <section id="v-saved" class="view">
       <button class="back" onclick="route('home')">← Home</button>
@@ -78,10 +90,28 @@
       <div class="cards" id="saved-cards"></div>
     </section>
 
+    <!-- MAP -->
+    <section id="v-map" class="view">
+      <button class="back" onclick="route('home')">← Home</button>
+      <div class="rhead"><h2>Hostels &amp; PGs on the map</h2></div>
+      <div id="map" style="height:68vh;border-radius:16px;overflow:hidden;border:1px solid var(--line)"></div>
+    </section>
+
+    <!-- OWNER DASHBOARD -->
+    <section id="v-dashboard" class="view">
+      <div class="rhead">
+        <h2>My properties</h2>
+        <button class="btn" style="width:auto;padding:10px 18px" onclick="startNewListing()">+ Add a property</button>
+      </div>
+      <div id="dash-listings"></div>
+      <div class="sec" style="font-size:18px;margin-top:30px">Enquiries for your properties</div>
+      <div id="dash-enquiries"></div>
+    </section>
+
     <!-- LIST YOUR PROPERTY -->
     <section id="v-list" class="view">
       <div class="formcard">
-        <h2>List your property</h2>
+        <h2 id="list-title">List your property</h2>
         <div class="sub">Reach students looking for hostels &amp; PGs. Free to list — goes live after our team verifies it.</div>
         <div class="fsec">Property details</div>
         <div class="row2">
@@ -99,6 +129,12 @@
         <div class="row2">
           <div class="field"><label>Available from</label><input id="o-date" type="date"></div>
           <div class="field"><label>Food</label><select id="o-food"><option value="true">Included</option><option value="false">Not included</option></select></div>
+        </div>
+        <div class="fsec">Location on map</div>
+        <div class="field">
+          <label>Click on the map to drop a pin at your property's location</label>
+          <div id="pickmap" style="height:220px;border-radius:10px;overflow:hidden;border:1px solid var(--line)"></div>
+          <div id="pickmap-status" style="font-size:12px;color:var(--muted);margin-top:6px">No pin set yet.</div>
         </div>
         <div class="fsec">Photos</div>
         <div class="field">
@@ -124,7 +160,7 @@
           <div class="field"><label>WhatsApp number</label><input id="o-wa" placeholder="91XXXXXXXXXX"></div>
         </div>
         <div class="field"><label>Description</label><textarea id="o-desc" placeholder="Location highlights, nearby colleges, rules, what makes it special..."></textarea></div>
-        <button class="btn" onclick="submitListing()">Submit for verification</button>
+        <button class="btn" id="list-submit" onclick="submitListing()">Submit for verification</button>
         <div class="note">We review every listing before it goes live.</div>
       </div>
     </section>
@@ -162,12 +198,35 @@
         <button id="at-login" class="authtab" onclick="switchAuthTab('login')">Log in</button>
       </div>
       <p class="s" id="auth-sub" style="color:var(--muted);font-size:13px;margin-bottom:14px"></p>
+      <div class="field" id="auth-role-field">
+        <label>I am a…</label>
+        <div class="rolepick">
+          <button type="button" id="role-student" class="rolebtn on" onclick="pickRole('student')">Student looking for a place</button>
+          <button type="button" id="role-owner" class="rolebtn" onclick="pickRole('owner')">Property owner</button>
+        </div>
+      </div>
       <div class="field" id="auth-name-field"><label>Your name</label><input id="au-name" autocomplete="name"></div>
       <div class="field"><label>Email</label><input id="au-email" type="email" autocomplete="email"></div>
       <div class="field"><label>Password</label><input id="au-pass" type="password" placeholder="at least 6 characters" autocomplete="current-password"></div>
       <div id="auth-err" style="color:#b00;font-size:13px;margin-bottom:10px;display:none"></div>
       <button class="btn" id="auth-submit" onclick="submitAuth()">Create account</button>
       <button class="back" style="margin-top:10px;display:block" onclick="closeAuth()">Cancel</button>
+    </div>
+  </div>
+
+  <!-- Thread modal -->
+  <div class="modal-bg" id="thread-modal">
+    <div class="modal" style="max-width:480px;display:flex;flex-direction:column;max-height:80vh">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">
+        <h3 id="thread-title" style="font-size:17px"></h3>
+        <button class="back" style="margin:0" onclick="closeThread()">✕</button>
+      </div>
+      <p class="s" id="thread-sub" style="color:var(--muted);font-size:12px;margin-bottom:10px"></p>
+      <div id="thread-messages" style="flex:1;overflow-y:auto;padding:4px 2px;min-height:160px"></div>
+      <div style="display:flex;gap:8px;margin-top:10px">
+        <input id="thread-input" placeholder="Type a message…" style="flex:1;border:1px solid var(--line);border-radius:10px;padding:11px;font-size:14px" onkeydown="if(event.key==='Enter')sendMessage()">
+        <button class="btn" style="width:auto;padding:11px 18px" onclick="sendMessage()">Send</button>
+      </div>
     </div>
   </div>
 

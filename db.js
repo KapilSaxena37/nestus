@@ -138,13 +138,13 @@ const SB = {
     const rows = await sb(`users?email=eq.${encodeURIComponent(email.toLowerCase())}&select=id,email,data`);
     return rows.length ? { id: rows[0].id, email: rows[0].email, ...rows[0].data } : null;
   },
-  async addUser({ email, name, salt, hash }) {
+  async addUser({ email, name, salt, hash, role = 'student' }) {
     try {
       const row = (await sb('users', {
         method: 'POST', headers: { Prefer: 'return=representation' },
         body: JSON.stringify({
           email: email.toLowerCase(),
-          data: { name, salt, hash, shortlist: [], createdAt: new Date().toISOString() },
+          data: { name, salt, hash, role, shortlist: [], createdAt: new Date().toISOString() },
         }),
       }))[0];
       return { id: row.id, email: row.email, ...row.data };
@@ -152,6 +152,17 @@ const SB = {
       if (/409|duplicate|unique/i.test(String(e))) return null; // email taken
       throw e;
     }
+  },
+  async getListingsByOwner(ownerId) {
+    const rows = await sb('listings?select=id,data');
+    return rows.map(rowToListing).filter(l => l.ownerId === Number(ownerId));
+  },
+  async updateListing(id, patch) {
+    const current = await SB.getListing(id);
+    if (!current) return null;
+    const { id: _i, ...data } = { ...current, ...patch };
+    await sb(`listings?id=eq.${Number(id)}`, { method: 'PATCH', body: JSON.stringify({ data }) });
+    return { id: Number(id), ...data };
   },
   async getUserById(id) {
     const rows = await sb(`users?id=eq.${Number(id)}&select=id,email,data`);
@@ -169,6 +180,17 @@ const SB = {
     const name = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`;
     return await sbUpload(name, buffer, contentType);
   },
+  async addMessage(data) {
+    const row = (await sb('messages', {
+      method: 'POST', headers: { Prefer: 'return=representation' },
+      body: JSON.stringify({ data: { createdAt: new Date().toISOString(), ...data } }),
+    }))[0];
+    return { id: row.id, ...row.data };
+  },
+  async getMessages() {
+    const rows = await sb('messages?select=id,data');
+    return rows.map(r => ({ id: r.id, ...r.data }));
+  },
 };
 
 // =====================================================================
@@ -178,13 +200,14 @@ function fileEnsure() {
   if (!existsSync(DATA_DIR)) mkdirSync(DATA_DIR, { recursive: true });
   if (!existsSync(DB_FILE)) {
     const listings = loadSeed().map((s, i) => ({ id: i + 1, ...s }));
-    writeFileSync(DB_FILE, JSON.stringify({ listings, enquiries: [], users: [], nextId: listings.length + 1 }, null, 2));
+    writeFileSync(DB_FILE, JSON.stringify({ listings, enquiries: [], users: [], messages: [], nextId: listings.length + 1 }, null, 2));
   }
 }
 const fileRead = () => {
   fileEnsure();
   const db = JSON.parse(readFileSync(DB_FILE, 'utf8'));
   if (!db.users) db.users = []; // migrate older db.json files
+  if (!db.messages) db.messages = [];
   return db;
 };
 const fileWrite = (db) => writeFileSync(DB_FILE, JSON.stringify(db, null, 2));
@@ -216,12 +239,22 @@ const FILE = {
   async findUserByEmail(email) {
     return fileRead().users.find(u => u.email.toLowerCase() === email.toLowerCase()) || null;
   },
-  async addUser({ email, name, salt, hash }) {
+  async addUser({ email, name, salt, hash, role = 'student' }) {
     const db = fileRead();
     if (db.users.find(u => u.email.toLowerCase() === email.toLowerCase())) return null;
     const id = db.users.reduce((m, u) => Math.max(m, u.id), 0) + 1;
-    const user = { id, email: email.toLowerCase(), name, salt, hash, shortlist: [], createdAt: new Date().toISOString() };
+    const user = { id, email: email.toLowerCase(), name, salt, hash, role, shortlist: [], createdAt: new Date().toISOString() };
     db.users.push(user); fileWrite(db); return user;
+  },
+  async getListingsByOwner(ownerId) {
+    return fileRead().listings.filter(l => l.ownerId === Number(ownerId));
+  },
+  async updateListing(id, patch) {
+    const db = fileRead();
+    const idx = db.listings.findIndex(l => l.id === Number(id));
+    if (idx === -1) return null;
+    db.listings[idx] = { ...db.listings[idx], ...patch, id: Number(id) };
+    fileWrite(db); return db.listings[idx];
   },
   async getUserById(id) { return fileRead().users.find(u => u.id === Number(id)) || null; },
   async setShortlist(id, shortlist) {
@@ -237,6 +270,12 @@ const FILE = {
     writeFileSync(join(uploadDir, name), buffer);
     return `/uploads/${name}`;
   },
+  async addMessage(data) {
+    const db = fileRead();
+    const m = { id: db.messages.reduce((mx, x) => Math.max(mx, x.id), 0) + 1, createdAt: new Date().toISOString(), ...data };
+    db.messages.push(m); fileWrite(db); return m;
+  },
+  async getMessages() { return fileRead().messages; },
 };
 
 // =====================================================================
@@ -257,6 +296,10 @@ export const addUser      = (...a) => impl.addUser(...a);
 export const getUserById  = (...a) => impl.getUserById(...a);
 export const setShortlist = (...a) => impl.setShortlist(...a);
 export const uploadPhoto  = (...a) => impl.uploadPhoto(...a);
+export const getListingsByOwner = (...a) => impl.getListingsByOwner(...a);
+export const updateListing = (...a) => impl.updateListing(...a);
+export const addMessage   = (...a) => impl.addMessage(...a);
+export const getMessages  = (...a) => impl.getMessages(...a);
 
 export async function cities() {
   const list = await impl.getListings({});

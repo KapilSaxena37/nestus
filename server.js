@@ -8,6 +8,7 @@ import {
   getListings, getListing, addListing, setStatus, getPending,
   addEnquiry, getEnquiries, cities, ensureSeed, USE_SUPABASE,
   findUserByEmail, addUser, getUserById, setShortlist, uploadPhoto,
+  getListingsByOwner, updateListing, addMessage, getMessages,
 } from './db.js';
 import {
   hashPassword, verifyPassword, signSession, verifySession,
@@ -58,7 +59,7 @@ async function currentUser(req) {
   return await getUserById(uid);
 }
 function publicUser(u) {
-  return { id: u.id, name: u.name, email: u.email, shortlist: u.shortlist || [] };
+  return { id: u.id, name: u.name, email: u.email, role: u.role || 'student', shortlist: u.shortlist || [] };
 }
 
 function readBody(req) {
@@ -107,6 +108,8 @@ const server = createServer(async (req, res) => {
       if (path === '/api/listings' && req.method === 'POST') {
         const b = await readBody(req);
         if (!b.name || !b.city) return send(res, 400, { error: 'Name and city are required' });
+        const me = await currentUser(req);
+        if (me) { b.ownerId = me.id; b.ownerName = me.name; }
         const created = await addListing(b);
         return send(res, 201, created);
       }
@@ -141,8 +144,9 @@ const server = createServer(async (req, res) => {
         if (!/^\S+@\S+\.\S+$/.test(email)) return send(res, 400, { error: 'Please enter a valid email' });
         if (String(b.password).length < 6) return send(res, 400, { error: 'Password must be at least 6 characters' });
         if (await findUserByEmail(email)) return send(res, 409, { error: 'That email is already registered — try logging in.' });
+        const role = b.role === 'owner' ? 'owner' : 'student';
         const { salt, hash } = hashPassword(String(b.password));
-        const user = await addUser({ email, name, salt, hash });
+        const user = await addUser({ email, name, salt, hash, role });
         if (!user) return send(res, 409, { error: 'That email is already registered.' });
         setSessionCookie(res, signSession(user.id));
         return send(res, 201, publicUser(user));
@@ -162,6 +166,119 @@ const server = createServer(async (req, res) => {
       if (path === '/api/auth/me' && req.method === 'GET') {
         const u = await currentUser(req);
         return send(res, 200, u ? publicUser(u) : { user: null });
+      }
+
+      // ----- Owner area (requires owner login) -----
+      if (path === '/api/me/listings' && req.method === 'GET') {
+        const u = await currentUser(req);
+        if (!u) return send(res, 401, { error: 'Please sign in' });
+        return send(res, 200, await getListingsByOwner(u.id));
+      }
+      if (path === '/api/me/owner-enquiries' && req.method === 'GET') {
+        const u = await currentUser(req);
+        if (!u) return send(res, 401, { error: 'Please sign in' });
+        const mine = await getListingsByOwner(u.id);
+        const ids = new Set(mine.map(l => l.id));
+        const all = await getEnquiries();
+        return send(res, 200, all.filter(e => ids.has(Number(e.listingId))));
+      }
+      // PATCH /api/listings/:id  (owner edits their own listing)
+      const em = path.match(/^\/api\/listings\/(\d+)$/);
+      if (em && req.method === 'PATCH') {
+        const u = await currentUser(req);
+        if (!u) return send(res, 401, { error: 'Please sign in' });
+        const listing = await getListing(em[1]);
+        if (!listing) return send(res, 404, { error: 'Not found' });
+        if (listing.ownerId !== u.id) return send(res, 403, { error: 'This is not your listing' });
+        const b = await readBody(req);
+        // Only allow these fields to be changed by the owner.
+        const allowed = ['name', 'area', 'nearCollege', 'distance', 'gender', 'startingRent',
+          'foodIncluded', 'foodDetail', 'hasAC', 'availableFrom', 'description', 'amenities',
+          'rooms', 'rules', 'contactPhone', 'contactWhatsApp', 'photos', 'available', 'lat', 'lng'];
+        const patch = {};
+        for (const k of allowed) if (k in b) patch[k] = b[k];
+        // A pure availability toggle stays live; real content edits go back for re-verification.
+        const contentChanged = Object.keys(patch).some(k => k !== 'available');
+        if (contentChanged) { patch.status = 'pending'; patch.verified = false; }
+        const updated = await updateListing(em[1], patch);
+        return send(res, 200, updated);
+      }
+
+      // POST /api/listings/:id/reviews  (logged-in users leave a review)
+      const rm = path.match(/^\/api\/listings\/(\d+)\/reviews$/);
+      if (rm && req.method === 'POST') {
+        const u = await currentUser(req);
+        if (!u) return send(res, 401, { error: 'Please sign in to leave a review' });
+        const b = await readBody(req);
+        const rating = Number(b.rating);
+        if (!(rating >= 1 && rating <= 5)) return send(res, 400, { error: 'Please give a rating from 1 to 5 stars' });
+        const listing = await getListing(rm[1]);
+        if (!listing) return send(res, 404, { error: 'Not found' });
+        const reviewList = listing.reviewList || [];
+        const review = { userId: u.id, name: u.name, rating, text: (b.text || '').trim(), createdAt: new Date().toISOString() };
+        const existing = reviewList.find(r => r.userId === u.id);
+        if (existing) Object.assign(existing, review); else reviewList.push(review);
+        const avg = reviewList.reduce((s, r) => s + r.rating, 0) / reviewList.length;
+        const updated = await updateListing(rm[1], {
+          reviewList, rating: Math.round(avg * 10) / 10, reviews: reviewList.length,
+        });
+        return send(res, 200, updated);
+      }
+
+      // ----- Messaging (requires login) -----
+      if (path === '/api/messages' && req.method === 'POST') {
+        const me = await currentUser(req);
+        if (!me) return send(res, 401, { error: 'Please sign in to message' });
+        const b = await readBody(req);
+        const text = (b.text || '').trim();
+        if (!text) return send(res, 400, { error: 'Message is empty' });
+        const listing = await getListing(b.listingId);
+        if (!listing) return send(res, 404, { error: 'Listing not found' });
+        if (!listing.ownerId) return send(res, 400, { error: 'This listing is not accepting messages yet.' });
+        // Work out the recipient.
+        let toId;
+        if (me.id === listing.ownerId) toId = Number(b.toId); // owner replying to a student
+        else toId = listing.ownerId;                          // student messaging the owner
+        if (!toId) return send(res, 400, { error: 'No recipient' });
+        const to = await getUserById(toId);
+        if (!to) return send(res, 404, { error: 'Recipient not found' });
+        const msg = await addMessage({
+          listingId: Number(b.listingId), listingName: listing.name,
+          fromId: me.id, fromName: me.name, toId, toName: to.name, text,
+        });
+        return send(res, 201, msg);
+      }
+      if (path === '/api/messages' && req.method === 'GET') {
+        const me = await currentUser(req);
+        if (!me) return send(res, 401, { error: 'Please sign in' });
+        const all = await getMessages();
+        const mine = all.filter(m => m.fromId === me.id || m.toId === me.id);
+        // Group into conversations keyed by listing + the other person.
+        const convos = {};
+        for (const m of mine) {
+          const otherId = m.fromId === me.id ? m.toId : m.fromId;
+          const otherName = m.fromId === me.id ? m.toName : m.fromName;
+          const key = `${m.listingId}:${otherId}`;
+          if (!convos[key] || m.createdAt > convos[key].lastAt) {
+            convos[key] = {
+              listingId: m.listingId, listingName: m.listingName,
+              otherId, otherName, lastText: m.text, lastAt: m.createdAt,
+            };
+          }
+        }
+        const list = Object.values(convos).sort((a, b) => (a.lastAt < b.lastAt ? 1 : -1));
+        return send(res, 200, list);
+      }
+      if (path === '/api/messages/thread' && req.method === 'GET') {
+        const me = await currentUser(req);
+        if (!me) return send(res, 401, { error: 'Please sign in' });
+        const listingId = Number(q.listingId), withId = Number(q.withId);
+        const all = await getMessages();
+        const thread = all.filter(m => Number(m.listingId) === listingId &&
+          ((m.fromId === me.id && m.toId === withId) || (m.fromId === withId && m.toId === me.id)))
+          .sort((a, b) => (a.createdAt < b.createdAt ? -1 : 1))
+          .map(m => ({ ...m, mine: m.fromId === me.id }));
+        return send(res, 200, thread);
       }
 
       // ----- Shortlist (requires login) -----
