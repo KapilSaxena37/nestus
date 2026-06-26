@@ -114,13 +114,17 @@ const SB = {
     if (!current) return null;
     const { id: _omit, ...data } = current;
     data.status = status;
-    if (status === 'approved') data.verified = true;
+    if (status === 'approved') { data.verified = true; data.verifiedAt = new Date().toISOString(); }
     await sb(`listings?id=eq.${Number(id)}`, { method: 'PATCH', body: JSON.stringify({ data }) });
     return { id: Number(id), ...data };
   },
   async getPending() {
     const rows = await sb('listings?select=id,data');
     return rows.map(rowToListing).filter(l => l.status === 'pending');
+  },
+  async getAllListings() {
+    const rows = await sb('listings?select=id,data');
+    return rows.map(rowToListing);
   },
   async addEnquiry(data) {
     const row = (await sb('enquiries', {
@@ -176,6 +180,13 @@ const SB = {
     await sb(`users?id=eq.${Number(id)}`, { method: 'PATCH', body: JSON.stringify({ data }) });
     return { id: Number(id), email, ...data };
   },
+  async updateUserData(id, patch) {
+    const u = await SB.getUserById(id);
+    if (!u) return null;
+    const { id: _i, email, ...data } = { ...u, ...patch };
+    await sb(`users?id=eq.${Number(id)}`, { method: 'PATCH', body: JSON.stringify({ data }) });
+    return { id: Number(id), email, ...data };
+  },
   async uploadPhoto(buffer, contentType, ext) {
     const name = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`;
     return await sbUpload(name, buffer, contentType);
@@ -225,10 +236,12 @@ const FILE = {
     const db = fileRead();
     const l = db.listings.find(x => x.id === Number(id));
     if (!l) return null;
-    l.status = status; if (status === 'approved') l.verified = true;
+    l.status = status;
+    if (status === 'approved') { l.verified = true; l.verifiedAt = new Date().toISOString(); }
     fileWrite(db); return l;
   },
   async getPending() { return fileRead().listings.filter(l => l.status === 'pending'); },
+  async getAllListings() { return fileRead().listings; },
   async addEnquiry(data) {
     const db = fileRead();
     const e = { id: db.enquiries.length + 1, createdAt: new Date().toISOString(), ...data };
@@ -262,6 +275,12 @@ const FILE = {
     const u = db.users.find(x => x.id === Number(id));
     if (!u) return null;
     u.shortlist = shortlist; fileWrite(db); return u;
+  },
+  async updateUserData(id, patch) {
+    const db = fileRead();
+    const u = db.users.find(x => x.id === Number(id));
+    if (!u) return null;
+    Object.assign(u, patch); fileWrite(db); return u;
   },
   async uploadPhoto(buffer, contentType, ext) {
     const uploadDir = join(__dirname, 'public', 'uploads');
@@ -298,8 +317,10 @@ export const setShortlist = (...a) => impl.setShortlist(...a);
 export const uploadPhoto  = (...a) => impl.uploadPhoto(...a);
 export const getListingsByOwner = (...a) => impl.getListingsByOwner(...a);
 export const updateListing = (...a) => impl.updateListing(...a);
+export const getAllListings = (...a) => impl.getAllListings(...a);
 export const addMessage   = (...a) => impl.addMessage(...a);
 export const getMessages  = (...a) => impl.getMessages(...a);
+export const updateUserData = (...a) => impl.updateUserData(...a);
 
 export async function cities() {
   const list = await impl.getListings({});

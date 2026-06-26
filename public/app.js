@@ -1,7 +1,13 @@
 // ---- NestUs frontend ----
-const state = { filters: {}, chips: new Set(), currentListing: null, selectedRoom: null, user: null, authMode: 'signup', authRole: 'student', ownerPhotos: [], detailPhoto: 0, editId: null, ownerLat: null, ownerLng: null };
+const state = { filters: {}, chips: new Set(), currentListing: null, selectedRoom: null, user: null, authMode: 'signup', authRole: 'student', ownerPhotos: [], detailPhoto: 0, editId: null, ownerLat: null, ownerLng: null, roomRows: [] };
 
-const CITY_COORDS = { Nagpur: [21.1458, 79.0882], Indore: [22.7196, 75.8577] };
+function escAttr(s) { return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/"/g, '&quot;'); }
+
+const CITIES = ['Nagpur', 'Indore', 'Pune', 'Bhopal', 'Kota'];
+const CITY_COORDS = {
+  Nagpur: [21.1458, 79.0882], Indore: [22.7196, 75.8577],
+  Pune: [18.5204, 73.8567], Bhopal: [23.2599, 77.4126], Kota: [25.2138, 75.8648],
+};
 let _mapView = null, _pickMap = null, _pickMarker = null;
 
 const $ = (id) => document.getElementById(id);
@@ -23,19 +29,19 @@ function route(view) {
 // ---------- HOME ----------
 async function initHome() {
   const cities = await api('/api/cities');
-  const sel = $('s-city');
-  const names = Object.keys(cities);
-  sel.innerHTML = names.map(c => `<option>${c}</option>`).join('') || '<option>Nagpur</option>';
+  $('s-city').innerHTML = CITIES.map(c => `<option>${c}</option>`).join('');
 
   const total = Object.values(cities).reduce((a, b) => a + b, 0);
   $('home-stats').innerHTML = `
     <div class="stat"><div class="num">${total}+</div><div class="lbl">Verified listings</div></div>
-    <div class="stat"><div class="num">${names.length}</div><div class="lbl">Cities</div></div>
+    <div class="stat"><div class="num">${CITIES.length}</div><div class="lbl">Cities</div></div>
     <div class="stat"><div class="num">4.4★</div><div class="lbl">Avg. rating</div></div>`;
-  $('home-cities').innerHTML = names.map(c => `
-    <div class="citycard" onclick="quickCity('${c}')">
-      <div class="cn">${c}</div><div class="cc">${cities[c]} listing${cities[c] > 1 ? 's' : ''} available</div>
-    </div>`).join('');
+  $('home-cities').innerHTML = CITIES.map(c => {
+    const n = cities[c] || 0;
+    return `<div class="citycard" onclick="quickCity('${c}')">
+      <div class="cn">${c}</div><div class="cc">${n ? n + ' listing' + (n > 1 ? 's' : '') + ' available' : 'Coming soon — be the first'}</div>
+    </div>`;
+  }).join('');
 }
 
 function quickCity(c) { $('s-city').value = c; $('s-gender').value = 'Any'; $('s-college').value = ''; doSearch(); }
@@ -104,10 +110,14 @@ async function openDetail(id) {
 
 function renderDetail() {
   const l = state.currentListing;
-  const rooms = (l.rooms || []).map((r, i) => `
-    <div class="roomrow ${state.selectedRoom && r.type === state.selectedRoom.type ? 'sel' : ''}" onclick="selRoom(${i})">
-      <span class="rt">${r.type}</span><span class="rp">${money(r.rent)}/mo</span>
-    </div>`).join('');
+  const rooms = (l.rooms || []).map((r, i) => {
+    const feats = [r.ac ? 'AC' : '', r.washroom ? 'Attached washroom' : '', r.furnished ? 'Furnished' : '']
+      .filter(Boolean).map(f => `<span style="font-size:10px;font-weight:700;background:var(--light);color:var(--purple);padding:2px 7px;border-radius:6px">${f}</span>`).join(' ');
+    return `<div class="roomrow ${state.selectedRoom && r.type === state.selectedRoom.type ? 'sel' : ''}" onclick="selRoom(${i})">
+      <div><span class="rt">${r.type}</span>${feats ? `<div style="display:flex;gap:4px;flex-wrap:wrap;margin-top:4px">${feats}</div>` : ''}</div>
+      <span class="rp">${money(r.rent)}/mo</span>
+    </div>`;
+  }).join('');
   const amen = (l.amenities || []).map(a => `<span>${a}</span>`).join('');
   const sr = state.selectedRoom || { type: '', rent: l.startingRent };
 
@@ -126,6 +136,7 @@ function renderDetail() {
         <div class="dname">${l.name}</div>
         <div class="dmeta">📍 ${l.area}, ${l.city}${l.distance ? ' · ' + l.distance : ''}
           ${l.verified ? ' · <b style="color:var(--green)">✓ Verified</b>' : ''}</div>
+        ${l.mapLink ? `<div style="margin:-6px 0 10px"><a href="${l.mapLink}" target="_blank" rel="noopener" style="color:var(--purple2);font-weight:700">📍 Open in Google Maps</a></div>` : ''}
         <div class="stars">${starStr(l.rating)} ${l.rating || '—'} <span style="color:var(--muted);font-size:13px">${l.reviews ? l.reviews + ' reviews' : 'No reviews yet'}</span></div>
         <p style="color:var(--muted);line-height:1.6;margin-top:12px">${l.description || ''}</p>
         <div class="metrics">
@@ -137,6 +148,7 @@ function renderDetail() {
         <div class="sec" style="font-size:16px;margin:18px 0 8px">Amenities</div>
         <div class="amen">${amen || '<span>—</span>'}</div>
         ${l.rules ? `<div class="sec" style="font-size:16px;margin:18px 0 8px">House rules</div><div style="color:var(--muted);font-size:13px;line-height:1.7">${l.rules}</div>` : ''}
+        ${safetyHTML(l)}
         ${reviewsHTML(l)}
       </div>
       <div>
@@ -156,6 +168,21 @@ function renderDetail() {
 function selRoom(i) {
   state.selectedRoom = state.currentListing.rooms[i];
   renderDetail();
+}
+
+function safetyHTML(l) {
+  const sf = l.safety || {};
+  const badges = [
+    sf.guard && 'Security guard', sf.warden && 'Warden on-site',
+    sf.biometric && 'Biometric / gated entry', sf.visitorRegister && 'Visitor register',
+  ].filter(Boolean);
+  const times = [];
+  if (sf.checkIn) times.push('Check-in: ' + sf.checkIn);
+  if (sf.checkOut) times.push('Check-out / curfew: ' + sf.checkOut);
+  if (!badges.length && !times.length) return '';
+  return `<div class="sec" style="font-size:16px;margin:18px 0 8px">Safety</div>
+    ${badges.length ? `<div class="safetyrow">${badges.map(b => `<span>🛡️ ${b}</span>`).join('')}</div>` : ''}
+    ${times.length ? `<div style="font-size:13px;color:var(--muted)">${times.join(' · ')}</div>` : ''}`;
 }
 
 function reviewsHTML(l) {
@@ -234,18 +261,30 @@ async function sendEnquiry() {
 // ---------- OWNER LISTING ----------
 async function submitListing() {
   const name = $('o-name').value.trim(), city = $('o-city').value;
-  const rent = Number($('o-rent').value), phone = $('o-phone').value.trim();
-  if (!name || !rent || !phone) return toast('Please fill name, rent and contact phone');
+  const phone = $('o-phone').value.trim();
+  if (!name || !phone) return toast('Please fill property name and contact phone');
+
+  const rooms = state.roomRows
+    .filter(r => r.type && String(r.type).trim() && Number(r.rent) > 0)
+    .map(r => ({ type: String(r.type).trim(), rent: Number(r.rent), ac: !!r.ac, washroom: !!r.washroom, furnished: !!r.furnished }));
+  if (!rooms.length) return toast('Please add at least one room type with a price');
+  const startingRent = Math.min(...rooms.map(r => r.rent));
 
   const amenities = [...document.querySelectorAll('#o-amen input:checked')].map(c => c.value);
+  const safety = {
+    guard: $('sf-guard').checked, warden: $('sf-warden').checked,
+    biometric: $('sf-biometric').checked, visitorRegister: $('sf-visitors').checked,
+    checkIn: $('sf-checkin').value.trim(), checkOut: $('sf-checkout').value.trim(),
+  };
   const payload = {
     name, city, area: $('o-area').value.trim(), nearCollege: $('o-college').value.trim(),
     distance: $('o-college').value.trim() ? 'Near ' + $('o-college').value.trim() : '',
-    gender: $('o-gender').value, startingRent: rent,
-    foodIncluded: $('o-food').value === 'true', hasAC: amenities.includes('AC'),
-    availableFrom: $('o-date').value, amenities,
+    gender: $('o-gender').value, startingRent,
+    foodIncluded: $('o-food').value === 'true', hasAC: rooms.some(r => r.ac) || amenities.includes('AC'),
+    availableFrom: $('o-date').value, amenities, safety,
+    mapLink: $('o-maplink').value.trim(),
     description: $('o-desc').value.trim(), contactPhone: phone, contactWhatsApp: $('o-wa').value.trim(),
-    rooms: [{ type: 'Starting from', rent }],
+    rooms,
     photos: [...state.ownerPhotos],
   };
   if (state.ownerLat != null && state.ownerLng != null) { payload.lat = state.ownerLat; payload.lng = state.ownerLng; }
@@ -256,9 +295,7 @@ async function submitListing() {
     body: JSON.stringify(payload),
   });
   if (res.error) return toast(res.error);
-  ['o-name', 'o-area', 'o-college', 'o-rent', 'o-phone', 'o-wa', 'o-desc'].forEach(id => $(id).value = '');
-  state.ownerPhotos = [];
-  renderPhotoPreviews();
+  clearOwnerForm();
   if (editing) {
     state.editId = null;
     toast('Changes saved — sent for re-verification.');
@@ -267,6 +304,14 @@ async function submitListing() {
     toast('Submitted! We\'ll verify and publish it soon.');
     setTimeout(() => state.user && state.user.role === 'owner' ? goDash() : route('home'), 1200);
   }
+}
+
+function clearOwnerForm() {
+  ['o-name', 'o-area', 'o-college', 'o-phone', 'o-wa', 'o-desc', 'o-maplink', 'sf-checkin', 'sf-checkout'].forEach(id => { if ($(id)) $(id).value = ''; });
+  ['sf-guard', 'sf-warden', 'sf-biometric', 'sf-visitors'].forEach(id => { if ($(id)) $(id).checked = false; });
+  document.querySelectorAll('#o-amen input').forEach(cb => { cb.checked = cb.value === 'WiFi'; });
+  state.ownerPhotos = [];
+  renderPhotoPreviews();
 }
 
 // ---------- PHOTO UPLOAD ----------
@@ -329,12 +374,34 @@ function updateNav() {
   $('nav-dash').style.display = isOwner ? '' : 'none';
   $('nav-list').style.display = isOwner ? 'none' : '';      // owners add via dashboard
   $('nav-messages').style.display = loggedIn ? '' : 'none';
+  $('nav-bell').style.display = loggedIn ? '' : 'none';
   $('nav-saved').style.display = loggedIn && !isOwner ? '' : 'none';
   if (loggedIn) {
     $('nav-username').textContent = 'Hi, ' + state.user.name.split(' ')[0];
     const n = (state.user.shortlist || []).length;
     $('nav-saved').textContent = n ? `♥ Saved (${n})` : '♥ Saved';
+    startUnreadPolling();
+  } else {
+    stopUnreadPolling();
   }
+}
+
+let _unreadPoll = null;
+function startUnreadPolling() {
+  pollUnread();
+  if (!_unreadPoll) _unreadPoll = setInterval(pollUnread, 20000);
+}
+function stopUnreadPolling() {
+  clearInterval(_unreadPoll); _unreadPoll = null;
+  $('bell-badge').style.display = 'none';
+}
+async function pollUnread() {
+  try {
+    const { count } = await fetch('/api/messages/unread').then(r => r.json());
+    const badge = $('bell-badge');
+    if (count > 0) { badge.textContent = count > 9 ? '9+' : count; badge.style.display = 'flex'; }
+    else badge.style.display = 'none';
+  } catch { /* ignore */ }
 }
 
 function pickRole(role) {
@@ -421,6 +488,46 @@ async function loadSaved() {
   $('saved-cards').innerHTML = list.map(cardHTML).join('');
 }
 
+// ---------- ROOM TYPES EDITOR ----------
+function addRoomRow(data) {
+  state.roomRows.push(data || { type: '', rent: '', ac: false, washroom: false, furnished: false });
+  renderRooms();
+}
+function removeRoomRow(i) { state.roomRows.splice(i, 1); renderRooms(); }
+function updRoom(i, k, v) { if (state.roomRows[i]) state.roomRows[i][k] = v; }
+function renderRooms() {
+  $('rooms-editor').innerHTML = state.roomRows.map((r, i) => `
+    <div class="roomedit">
+      <div class="row2">
+        <div class="field" style="margin-bottom:8px"><label>Room type</label>
+          <input value="${escAttr(r.type)}" oninput="updRoom(${i},'type',this.value)" placeholder="e.g. Single occupancy"></div>
+        <div class="field" style="margin-bottom:8px"><label>Rent (₹/mo)</label>
+          <input type="number" value="${escAttr(r.rent)}" oninput="updRoom(${i},'rent',this.value)" placeholder="6000"></div>
+      </div>
+      <div class="checks" style="margin-bottom:8px">
+        <label><input type="checkbox" ${r.ac ? 'checked' : ''} onchange="updRoom(${i},'ac',this.checked)"> AC</label>
+        <label><input type="checkbox" ${r.washroom ? 'checked' : ''} onchange="updRoom(${i},'washroom',this.checked)"> Attached washroom</label>
+        <label><input type="checkbox" ${r.furnished ? 'checked' : ''} onchange="updRoom(${i},'furnished',this.checked)"> Furnished</label>
+      </div>
+      ${state.roomRows.length > 1 ? `<button type="button" class="back" style="margin:0" onclick="removeRoomRow(${i})">Remove this room</button>` : ''}
+    </div>`).join('');
+}
+
+// ---------- ADDRESS SEARCH (free OpenStreetMap geocoding) ----------
+async function searchAddress() {
+  const q = $('pickmap-search').value.trim();
+  if (!q) return;
+  $('pickmap-status').textContent = 'Searching…';
+  try {
+    const r = await fetch('https://nominatim.openstreetmap.org/search?format=json&limit=1&q=' + encodeURIComponent(q));
+    const data = await r.json();
+    if (!data.length) { $('pickmap-status').textContent = 'No match — try a different address, or click the map.'; return; }
+    const lat = parseFloat(data[0].lat), lng = parseFloat(data[0].lon);
+    if (_pickMap) _pickMap.setView([lat, lng], 16);
+    setPin(lat, lng);
+  } catch { $('pickmap-status').textContent = 'Search failed — click the map to set the pin instead.'; }
+}
+
 // ---------- MESSAGING ----------
 let _threadPoll = null;
 
@@ -438,6 +545,7 @@ async function loadConversations() {
         <div style="font-size:11px;color:var(--muted)">${fmtDateTime(c.lastAt)}</div>
       </div>
     </div>`).join('') : `<div class="empty">No messages yet.<br>Open a listing and tap <b>💬 Message owner</b> to start a conversation.</div>`;
+  pollUnread(); // opening the inbox clears the bell server-side
 }
 
 function escapeJs(s) { return String(s || '').replace(/'/g, "\\'").replace(/"/g, '&quot;'); }
@@ -601,9 +709,9 @@ async function toggleAvailability(id, makeAvailable) {
 
 function startNewListing() {
   state.editId = null;
-  state.ownerPhotos = [];
-  ['o-name', 'o-area', 'o-college', 'o-rent', 'o-phone', 'o-wa', 'o-desc'].forEach(id => $(id).value = '');
-  renderPhotoPreviews();
+  clearOwnerForm();
+  state.roomRows = [];
+  addRoomRow(); // one blank room to start
   $('list-title').textContent = 'List your property';
   $('list-submit').textContent = 'Submit for verification';
   state.ownerLat = null; state.ownerLng = null;
@@ -621,13 +729,20 @@ async function editListing(id) {
   $('o-area').value = l.area || '';
   $('o-college').value = l.nearCollege || '';
   $('o-gender').value = l.gender || 'Girls';
-  $('o-rent').value = l.startingRent || '';
   $('o-date').value = l.availableFrom || '';
   $('o-food').value = l.foodIncluded ? 'true' : 'false';
   $('o-phone').value = l.contactPhone || '';
   $('o-wa').value = l.contactWhatsApp || '';
   $('o-desc').value = l.description || '';
+  $('o-maplink').value = l.mapLink || '';
   document.querySelectorAll('#o-amen input').forEach(cb => { cb.checked = (l.amenities || []).includes(cb.value); });
+  const sf = l.safety || {};
+  $('sf-guard').checked = !!sf.guard; $('sf-warden').checked = !!sf.warden;
+  $('sf-biometric').checked = !!sf.biometric; $('sf-visitors').checked = !!sf.visitorRegister;
+  $('sf-checkin').value = sf.checkIn || ''; $('sf-checkout').value = sf.checkOut || '';
+  state.roomRows = (l.rooms || []).map(r => ({ type: r.type || '', rent: r.rent || '', ac: !!r.ac, washroom: !!r.washroom, furnished: !!r.furnished }));
+  if (!state.roomRows.length) state.roomRows = [{ type: '', rent: '', ac: false, washroom: false, furnished: false }];
+  renderRooms();
   state.ownerPhotos = [...(l.photos || [])];
   renderPhotoPreviews();
   $('list-title').textContent = 'Edit property';

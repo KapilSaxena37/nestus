@@ -16,6 +16,7 @@
       <a onclick="goMap()">Map</a>
       <a id="nav-dash" style="display:none" onclick="goDash()">My properties</a>
       <a id="nav-list" onclick="startNewListing()">List your property</a>
+      <a id="nav-bell" style="display:none;position:relative;font-size:18px" onclick="goMessages()" title="Messages">🔔<span id="bell-badge" class="bell-badge" style="display:none">0</span></a>
       <a id="nav-messages" style="display:none" onclick="goMessages()">Messages</a>
       <a id="nav-saved" style="display:none" onclick="goSaved()">♥ Saved</a>
       <button class="signup" id="nav-login" onclick="openAuth('login')">Log in</button>
@@ -116,7 +117,7 @@
         <div class="fsec">Property details</div>
         <div class="row2">
           <div class="field"><label>Property name *</label><input id="o-name" placeholder="e.g. Shree Girls Hostel"></div>
-          <div class="field"><label>City *</label><select id="o-city"><option>Nagpur</option><option>Indore</option></select></div>
+          <div class="field"><label>City *</label><select id="o-city"><option>Nagpur</option><option>Indore</option><option>Pune</option><option>Bhopal</option><option>Kota</option></select></div>
         </div>
         <div class="row2">
           <div class="field"><label>Area / locality</label><input id="o-area" placeholder="Dharampeth"></div>
@@ -124,18 +125,25 @@
         </div>
         <div class="row2">
           <div class="field"><label>For</label><select id="o-gender"><option>Girls</option><option>Boys</option><option>Co-ed</option></select></div>
-          <div class="field"><label>Starting rent (₹/mo) *</label><input id="o-rent" type="number" placeholder="6000"></div>
-        </div>
-        <div class="row2">
           <div class="field"><label>Available from</label><input id="o-date" type="date"></div>
-          <div class="field"><label>Food</label><select id="o-food"><option value="true">Included</option><option value="false">Not included</option></select></div>
         </div>
+        <div class="field"><label>Food</label><select id="o-food"><option value="true">Included</option><option value="false">Not included</option></select></div>
+
+        <div class="fsec">Room types &amp; pricing</div>
+        <div style="font-size:12px;color:var(--muted);margin-bottom:8px">Add each kind of room you offer — e.g. AC and non-AC at different prices.</div>
+        <div id="rooms-editor"></div>
+        <button type="button" class="btn alt" style="width:auto;padding:8px 16px;margin-top:2px" onclick="addRoomRow()">+ Add room type</button>
         <div class="fsec">Location on map</div>
         <div class="field">
-          <label>Click on the map to drop a pin at your property's location</label>
+          <label>Search an address or area, then fine-tune by clicking the map</label>
+          <div style="display:flex;gap:8px;margin-bottom:8px">
+            <input id="pickmap-search" placeholder="e.g. Dharampeth, Nagpur" style="flex:1;border:1px solid var(--line);border-radius:10px;padding:11px;font-size:14px;background:#fafaff" onkeydown="if(event.key==='Enter'){event.preventDefault();searchAddress();}">
+            <button type="button" class="btn alt" style="width:auto;padding:9px 16px;margin:0" onclick="searchAddress()">Search</button>
+          </div>
           <div id="pickmap" style="height:220px;border-radius:10px;overflow:hidden;border:1px solid var(--line)"></div>
           <div id="pickmap-status" style="font-size:12px;color:var(--muted);margin-top:6px">No pin set yet.</div>
         </div>
+        <div class="field"><label>Google Maps link (optional)</label><input id="o-maplink" placeholder="Paste a Google Maps share link — shown to students as 'Open in Maps'"></div>
         <div class="fsec">Photos</div>
         <div class="field">
           <label>Add photos of the property (JPG/PNG, up to 5 MB each)</label>
@@ -154,6 +162,18 @@
           <label><input type="checkbox" value="AC"> AC rooms</label>
           <label><input type="checkbox" value="Study room"> Study room</label>
         </div>
+        <div class="fsec">Safety &amp; rules</div>
+        <div class="checks">
+          <label><input type="checkbox" id="sf-guard"> Security guard</label>
+          <label><input type="checkbox" id="sf-warden"> Warden on-site</label>
+          <label><input type="checkbox" id="sf-biometric"> Biometric / gated entry</label>
+          <label><input type="checkbox" id="sf-visitors"> Visitor register</label>
+        </div>
+        <div class="row2" style="margin-top:10px">
+          <div class="field"><label>Check-in time</label><input id="sf-checkin" placeholder="e.g. 8:00 AM"></div>
+          <div class="field"><label>Check-out / curfew time</label><input id="sf-checkout" placeholder="e.g. 10:00 PM"></div>
+        </div>
+
         <div class="fsec">Contact &amp; description</div>
         <div class="row2">
           <div class="field"><label>Contact phone *</label><input id="o-phone" placeholder="+91 ..."></div>

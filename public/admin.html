@@ -6,22 +6,37 @@
 <title>NestUs — Admin</title>
 <link rel="stylesheet" href="/styles.css">
 <style>
-  .admin-wrap{max-width:860px;margin:0 auto;padding:24px 18px 60px;}
+  .admin-wrap{max-width:920px;margin:0 auto;padding:24px 18px 60px;}
   .keybar{background:#fff;border:1px solid var(--line);border-radius:12px;padding:16px;display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:20px;}
   .keybar input{flex:1;min-width:180px;border:1px solid var(--line);border-radius:8px;padding:10px;}
   .keybar button{background:var(--purple2);color:#fff;border:none;padding:10px 18px;border-radius:8px;font-weight:700;cursor:pointer;}
-  .tabs{display:flex;gap:8px;margin-bottom:16px;}
+  .tabs{display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap;}
   .tabs button{border:1px solid var(--line);background:#fff;padding:8px 16px;border-radius:20px;font-weight:600;cursor:pointer;color:var(--muted);}
   .tabs button.on{background:var(--purple2);color:#fff;border-color:var(--purple2);}
-  .pcard{background:#fff;border:1px solid var(--line);border-radius:14px;padding:18px;margin-bottom:14px;}
-  .pcard h3{font-size:17px;font-weight:800;}
+  .pcard{background:#fff;border:1px solid var(--line);border-radius:14px;padding:16px;margin-bottom:12px;}
+  .pcard h3{font-size:16px;font-weight:800;}
   .pcard .meta{color:var(--muted);font-size:13px;margin:4px 0 10px;}
-  .pcard .row{display:flex;gap:14px;flex-wrap:wrap;font-size:13px;margin-bottom:10px;}
-  .pcard .row b{color:var(--purple2);}
-  .acts{display:flex;gap:10px;}
-  .acts button{border:none;padding:9px 18px;border-radius:8px;font-weight:700;cursor:pointer;}
+  .acts{display:flex;gap:10px;flex-wrap:wrap;margin-top:10px;}
+  .acts button{border:none;padding:9px 16px;border-radius:8px;font-weight:700;cursor:pointer;}
   .approve{background:var(--green);color:#fff;}
   .reject{background:#fff;color:#b00;border:1.5px solid #e0b4b4;}
+  .neutral{background:#fff;color:var(--purple2);border:1.5px solid var(--purple2);}
+  .statgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:12px;margin-bottom:16px;}
+  .statbox{background:#fff;border:1px solid var(--line);border-radius:14px;padding:18px;text-align:center;}
+  .statbox .n{font-size:28px;font-weight:800;color:var(--purple2);}
+  .statbox .l{font-size:12px;color:var(--muted);margin-top:4px;}
+  .detail-toggle{cursor:pointer;color:var(--purple2);font-weight:700;font-size:13px;}
+  .kv{font-size:13px;margin:3px 0;} .kv b{color:var(--ink);}
+  .editgrid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:10px;}
+  .editgrid .f label{font-size:11px;color:var(--muted);display:block;margin-bottom:3px;}
+  .editgrid .f input,.editgrid .f select,.editgrid .f textarea{width:100%;border:1px solid var(--line);border-radius:8px;padding:8px;font-size:13px;}
+  .filterbar{display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;}
+  .filterbar button{border:1px solid var(--line);background:#fff;padding:6px 12px;border-radius:16px;font-size:12px;font-weight:600;cursor:pointer;color:var(--muted);}
+  .filterbar button.on{background:var(--purple);color:#fff;border-color:var(--purple);}
+  .st{display:inline-block;font-size:11px;font-weight:700;padding:3px 9px;border-radius:20px;}
+  .st.approved{background:#e2f3ec;color:var(--green);}.st.pending{background:#fdf1dc;color:#9a6a00;}.st.rejected{background:#fae3e3;color:#b00;}
+  .imp textarea{width:100%;min-height:90px;border:1px solid var(--line);border-radius:10px;padding:10px;font-size:13px;font-family:monospace;}
+  .thumb{width:70px;height:54px;object-fit:cover;border-radius:8px;margin:2px;}
 </style>
 </head>
 <body>
@@ -33,70 +48,241 @@
   <div class="admin-wrap">
     <div class="keybar">
       <span style="font-weight:700">Admin key:</span>
-      <input id="key" type="password" placeholder="Enter admin key">
+      <input id="key" type="password" placeholder="Enter admin key" onkeydown="if(event.key==='Enter')connect()">
       <button onclick="connect()">Connect</button>
     </div>
 
     <div id="panel" style="display:none">
       <div class="tabs">
-        <button id="tab-pending" class="on" onclick="show('pending')">Pending listings</button>
+        <button id="tab-dash" class="on" onclick="show('dash')">📊 Dashboard</button>
+        <button id="tab-all" onclick="show('all')">All listings</button>
+        <button id="tab-pending" onclick="show('pending')">Pending</button>
         <button id="tab-enq" onclick="show('enq')">Enquiries</button>
+        <button id="tab-import" onclick="show('import')">Import CSV</button>
       </div>
-      <div id="list"></div>
+      <div id="content"></div>
     </div>
   </div>
 
   <div class="toast" id="toast"></div>
 <script>
   let KEY = '';
-  let tab = 'pending';
   const $ = id => document.getElementById(id);
-  const money = n => '₹' + Number(n).toLocaleString('en-IN');
+  const money = n => '₹' + Number(n || 0).toLocaleString('en-IN');
+  const esc = s => String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
   function toast(m){ const t=$('toast'); t.textContent=m; t.classList.add('show'); clearTimeout(t._t); t._t=setTimeout(()=>t.classList.remove('show'),2500); }
+  async function api(path, opts){ return fetch(path + (path.includes('?')?'&':'?') + 'key=' + encodeURIComponent(KEY), opts).then(r=>r.json()); }
 
   async function connect(){
     KEY = $('key').value.trim();
-    const r = await fetch('/api/admin/pending?key=' + encodeURIComponent(KEY));
+    const r = await fetch('/api/admin/stats?key=' + encodeURIComponent(KEY));
     if (r.status === 401) { toast('Wrong admin key'); return; }
     $('panel').style.display = 'block';
-    show('pending');
+    show('dash');
   }
   function show(t){
-    tab = t;
-    $('tab-pending').classList.toggle('on', t==='pending');
-    $('tab-enq').classList.toggle('on', t==='enq');
-    t==='pending' ? loadPending() : loadEnquiries();
+    ['dash','all','pending','enq','import'].forEach(x => $('tab-'+x).classList.toggle('on', x===t));
+    ({dash:loadDash, all:loadAll, pending:loadPending, enq:loadEnq, import:loadImport})[t]();
   }
-  async function loadPending(){
-    const list = await fetch('/api/admin/pending?key=' + encodeURIComponent(KEY)).then(r=>r.json());
-    if (!list.length){ $('list').innerHTML = '<div class="empty">No listings waiting for review. 🎉</div>'; return; }
-    $('list').innerHTML = list.map(l => `
+  function ago(iso){ if(!iso) return '—'; const d=(Date.now()-new Date(iso))/86400000; if(d<1) return 'today'; if(d<2) return 'yesterday'; return Math.floor(d)+' days ago'; }
+  function dt(iso){ try{ return new Date(iso).toLocaleString('en-IN'); }catch{ return iso||'—'; } }
+
+  // ---- Dashboard ----
+  async function loadDash(){
+    const s = await api('/api/admin/stats');
+    const cities = Object.entries(s.byCity||{}).map(([c,n])=>`${c}: ${n}`).join(' · ') || '—';
+    $('content').innerHTML = `
+      <div class="statgrid">
+        <div class="statbox"><div class="n">${s.total}</div><div class="l">Total listings</div></div>
+        <div class="statbox"><div class="n" style="color:var(--green)">${s.approved}</div><div class="l">Verified &amp; live</div></div>
+        <div class="statbox"><div class="n" style="color:#9a6a00">${s.pending}</div><div class="l">Awaiting review</div></div>
+        <div class="statbox"><div class="n" style="color:#b00">${s.rejected}</div><div class="l">Rejected</div></div>
+        <div class="statbox"><div class="n">${s.available}</div><div class="l">Rooms available</div></div>
+        <div class="statbox"><div class="n">${s.full}</div><div class="l">Marked full</div></div>
+      </div>
       <div class="pcard">
-        <h3>${l.name}</h3>
-        <div class="meta">📍 ${l.area || '—'}, ${l.city} ${l.nearCollege ? '· near ' + l.nearCollege : ''}</div>
-        <div class="row"><span><b>For:</b> ${l.gender}</span><span><b>Rent:</b> ${money(l.startingRent)}/mo</span><span><b>Food:</b> ${l.foodIncluded?'Yes':'No'}</span><span><b>Phone:</b> ${l.contactPhone||'—'}</span></div>
-        ${l.description ? `<div style="font-size:13px;color:var(--muted);margin-bottom:10px">${l.description}</div>` : ''}
-        ${l.amenities && l.amenities.length ? `<div class="tagrow">${l.amenities.map(a=>'<span class=tag>'+a+'</span>').join('')}</div>` : ''}
-        <div class="acts">
-          <button class="approve" onclick="act(${l.id},'approve')">✓ Approve &amp; publish</button>
-          <button class="reject" onclick="act(${l.id},'reject')">Reject</button>
-        </div>
-      </div>`).join('');
+        <div class="kv"><b>Last verification:</b> ${dt(s.lastVerifiedAt)} (${ago(s.lastVerifiedAt)})</div>
+        <div class="kv"><b>Oldest live verification:</b> ${dt(s.oldestVerifiedAt)} (${ago(s.oldestVerifiedAt)})</div>
+        <div class="kv"><b>By city:</b> ${cities}</div>
+        ${s.pending>0 ? `<div style="margin-top:10px"><span class="detail-toggle" onclick="this.nextElementSibling.style.display=this.nextElementSibling.style.display==='none'?'block':'none'">▸ ${s.pending} awaiting review — show</span><div style="display:none;margin-top:8px">${(s.pendingList||[]).map(p=>`<div class="kv">• ${esc(p.name)} (${esc(p.city)}) — submitted ${ago(p.createdAt)}</div>`).join('')}</div></div>` : ''}
+      </div>
+      ${s.pending>0 ? `<button class="approve" style="border:none;padding:10px 18px;border-radius:8px;font-weight:700;cursor:pointer" onclick="show('pending')">Review ${s.pending} pending →</button>` : ''}`;
   }
-  async function loadEnquiries(){
-    const list = await fetch('/api/admin/enquiries?key=' + encodeURIComponent(KEY)).then(r=>r.json());
-    if (!list.length){ $('list').innerHTML = '<div class="empty">No enquiries yet.</div>'; return; }
-    $('list').innerHTML = list.slice().reverse().map(e => `
-      <div class="pcard">
-        <h3>${e.name} <span style="font-weight:500;color:var(--muted);font-size:13px">→ ${e.listingName||('listing #'+e.listingId)}</span></h3>
-        <div class="meta">📞 ${e.phone} · ${new Date(e.createdAt).toLocaleString('en-IN')}</div>
-        ${e.message ? `<div style="font-size:13px">${e.message}</div>` : ''}
-      </div>`).join('');
+
+  // ---- All listings (with full details + edit) ----
+  let _all = [], _filter = 'all';
+  async function loadAll(){
+    _all = await api('/api/admin/listings');
+    renderAll();
+  }
+  function setFilter(f){ _filter=f; renderAll(); }
+  function renderAll(){
+    const list = _filter==='all' ? _all : _all.filter(l => (l.status||'pending')===_filter);
+    $('content').innerHTML = `
+      <div class="filterbar">
+        ${['all','approved','pending','rejected'].map(f=>`<button class="${_filter===f?'on':''}" onclick="setFilter('${f}')">${f==='all'?'All':f[0].toUpperCase()+f.slice(1)} (${f==='all'?_all.length:_all.filter(l=>(l.status||'pending')===f).length})</button>`).join('')}
+      </div>
+      ${list.length ? list.map(rowHTML).join('') : '<div class="empty">No listings in this filter.</div>'}`;
+  }
+  function rowHTML(l){
+    const st = l.status || 'pending';
+    return `<div class="pcard">
+      <div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap">
+        <div><h3>${esc(l.name)} <span class="st ${st}">${st}</span></h3>
+          <div class="meta">${esc(l.area||'')}${l.area?', ':''}${esc(l.city)} · ${money(l.startingRent)}/mo · ${esc(l.gender||'')}</div></div>
+        <div><span class="detail-toggle" onclick="toggleDetail(${l.id})">View / edit ▾</span></div>
+      </div>
+      <div id="d-${l.id}" style="display:none;border-top:1px solid var(--line);margin-top:10px;padding-top:10px"></div>
+    </div>`;
+  }
+  function toggleDetail(id){
+    const box = $('d-'+id);
+    if (box.style.display==='block'){ box.style.display='none'; return; }
+    box.style.display='block';
+    const l = _all.find(x=>x.id===id);
+    const rooms = (l.rooms||[]).map(r=>`<div class="kv">• ${esc(r.type)} — ${money(r.rent)}/mo ${[r.ac?'AC':'',r.washroom?'Attached washroom':'',r.furnished?'Furnished':''].filter(Boolean).join(', ')}</div>`).join('') || '<div class="kv">—</div>';
+    const sf = l.safety||{};
+    const safety = [sf.guard&&'Security guard',sf.warden&&'Warden',sf.biometric&&'Biometric entry',sf.visitorRegister&&'Visitor register'].filter(Boolean).join(', ') || '—';
+    const photos = (l.photos||[]).map(p=>`<img class="thumb" src="${p}">`).join('') || '—';
+    box.innerHTML = `
+      <div class="kv"><b>Owner:</b> ${esc(l.ownerName||'—')} (id ${l.ownerId||'—'})</div>
+      <div class="kv"><b>Near:</b> ${esc(l.nearCollege||'—')} · <b>Food:</b> ${l.foodIncluded?'Yes':'No'} · <b>Available from:</b> ${esc(l.availableFrom||'—')}</div>
+      <div class="kv"><b>Contact:</b> ${esc(l.contactPhone||'—')} · WA: ${esc(l.contactWhatsApp||'—')}</div>
+      <div class="kv"><b>Amenities:</b> ${(l.amenities||[]).join(', ')||'—'}</div>
+      <div class="kv"><b>Safety:</b> ${safety} ${sf.checkIn?'· in '+esc(sf.checkIn):''} ${sf.checkOut?'· out '+esc(sf.checkOut):''}</div>
+      <div class="kv"><b>Rooms:</b></div>${rooms}
+      <div class="kv"><b>Description:</b> ${esc(l.description||'—')}</div>
+      <div class="kv"><b>Map:</b> ${l.lat?`${l.lat}, ${l.lng}`:'—'} ${l.mapLink?`· <a href="${esc(l.mapLink)}" target="_blank">link</a>`:''}</div>
+      <div class="kv"><b>Photos:</b><br>${photos}</div>
+      <div class="kv"><b>Created:</b> ${dt(l.createdAt)} · <b>Verified:</b> ${dt(l.verifiedAt)} (${ago(l.verifiedAt)})</div>
+      <div class="acts">
+        <button class="approve" onclick="act(${l.id},'approve')">✓ Approve / publish</button>
+        <button class="reject" onclick="act(${l.id},'reject')">Reject</button>
+        <button class="neutral" onclick="openEdit(${l.id})">✎ Edit</button>
+      </div>
+      <div id="e-${l.id}"></div>`;
+  }
+  function openEdit(id){
+    const l = _all.find(x=>x.id===id);
+    $('e-'+id).innerHTML = `
+      <div style="border-top:1px dashed var(--line);margin-top:10px;padding-top:10px">
+      <div class="editgrid">
+        <div class="f"><label>Name</label><input id="ed-name-${id}" value="${esc(l.name)}"></div>
+        <div class="f"><label>City</label><input id="ed-city-${id}" value="${esc(l.city)}"></div>
+        <div class="f"><label>Area</label><input id="ed-area-${id}" value="${esc(l.area||'')}"></div>
+        <div class="f"><label>Nearest college</label><input id="ed-col-${id}" value="${esc(l.nearCollege||'')}"></div>
+        <div class="f"><label>Starting rent</label><input id="ed-rent-${id}" type="number" value="${esc(l.startingRent)}"></div>
+        <div class="f"><label>Gender</label><input id="ed-gender-${id}" value="${esc(l.gender||'')}"></div>
+        <div class="f"><label>Contact phone</label><input id="ed-phone-${id}" value="${esc(l.contactPhone||'')}"></div>
+        <div class="f"><label>WhatsApp</label><input id="ed-wa-${id}" value="${esc(l.contactWhatsApp||'')}"></div>
+        <div class="f"><label>Maps link</label><input id="ed-map-${id}" value="${esc(l.mapLink||'')}"></div>
+        <div class="f"><label>Food included</label><select id="ed-food-${id}"><option value="true" ${l.foodIncluded?'selected':''}>Yes</option><option value="false" ${!l.foodIncluded?'selected':''}>No</option></select></div>
+      </div>
+      <div class="f" style="margin-top:8px"><label>Description</label><textarea id="ed-desc-${id}" style="width:100%;border:1px solid var(--line);border-radius:8px;padding:8px;font-size:13px;min-height:60px">${esc(l.description||'')}</textarea></div>
+      <button class="approve" style="border:none;padding:9px 16px;border-radius:8px;font-weight:700;cursor:pointer;margin-top:8px" onclick="saveEdit(${id})">Save changes</button>
+      </div>`;
+  }
+  async function saveEdit(id){
+    const v = k => $(`ed-${k}-${id}`).value;
+    const patch = {
+      name: v('name'), city: v('city'), area: v('area'), nearCollege: v('col'),
+      startingRent: Number(v('rent')), gender: v('gender'), contactPhone: v('phone'),
+      contactWhatsApp: v('wa'), mapLink: v('map'), foodIncluded: v('food')==='true', description: v('desc'),
+    };
+    const res = await api('/api/admin/listings/'+id+'/update', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(patch) });
+    if (res.error) return toast(res.error);
+    toast('Saved'); await loadAll();
   }
   async function act(id, action){
-    await fetch(`/api/admin/listings/${id}/${action}?key=` + encodeURIComponent(KEY), { method:'POST' });
-    toast(action === 'approve' ? 'Published!' : 'Rejected');
-    loadPending();
+    await fetch(`/api/admin/listings/${id}/${action}?key=`+encodeURIComponent(KEY), { method:'POST' });
+    toast(action==='approve'?'Published':'Rejected'); await loadAll();
+  }
+
+  // ---- Pending ----
+  async function loadPending(){
+    const list = await api('/api/admin/pending');
+    if (!list.length){ $('content').innerHTML = '<div class="empty">No listings waiting for review. 🎉</div>'; return; }
+    $('content').innerHTML = list.map(l => `
+      <div class="pcard">
+        <h3>${esc(l.name)}</h3>
+        <div class="meta">📍 ${esc(l.area||'—')}, ${esc(l.city)} ${l.nearCollege?'· near '+esc(l.nearCollege):''}</div>
+        <div class="kv"><b>For:</b> ${esc(l.gender)} · <b>From:</b> ${money(l.startingRent)}/mo · <b>Food:</b> ${l.foodIncluded?'Yes':'No'} · <b>Phone:</b> ${esc(l.contactPhone||'—')}</div>
+        ${(l.rooms||[]).length?`<div class="kv"><b>Rooms:</b> ${l.rooms.map(r=>esc(r.type)+' '+money(r.rent)).join(' · ')}</div>`:''}
+        ${l.description?`<div style="font-size:13px;color:var(--muted);margin:6px 0">${esc(l.description)}</div>`:''}
+        <div class="acts"><button class="approve" onclick="actP(${l.id},'approve')">✓ Approve &amp; publish</button><button class="reject" onclick="actP(${l.id},'reject')">Reject</button></div>
+      </div>`).join('');
+  }
+  async function actP(id, action){ await fetch(`/api/admin/listings/${id}/${action}?key=`+encodeURIComponent(KEY),{method:'POST'}); toast(action==='approve'?'Published':'Rejected'); loadPending(); }
+
+  // ---- Enquiries ----
+  async function loadEnq(){
+    const list = await api('/api/admin/enquiries');
+    if (!list.length){ $('content').innerHTML='<div class="empty">No enquiries yet.</div>'; return; }
+    $('content').innerHTML = list.slice().reverse().map(e=>`
+      <div class="pcard"><h3>${esc(e.name)} <span style="font-weight:500;color:var(--muted);font-size:13px">→ ${esc(e.listingName||('#'+e.listingId))}</span></h3>
+      <div class="meta">📞 ${esc(e.phone)} · ${dt(e.createdAt)}</div>${e.message?`<div style="font-size:13px">${esc(e.message)}</div>`:''}</div>`).join('');
+  }
+
+  // ---- Import CSV ----
+  let _parsed = [];
+  function loadImport(){
+    $('content').innerHTML = `
+      <div class="pcard imp">
+        <h3>Bulk import listings from CSV</h3>
+        <div class="meta">Columns (first row = headers): <code>name, city, area, nearCollege, gender, startingRent, contactPhone, contactWhatsApp, foodIncluded, amenities, description, lat, lng</code>. <b>amenities</b> separated by semicolons. <b>foodIncluded</b> = true/false.</div>
+        <a href="/listing-template.csv" download style="display:inline-block;margin-bottom:12px;color:var(--purple2);font-weight:700;text-decoration:none">⬇ Download CSV template (with example rows)</a><br>
+        <input type="file" accept=".csv,text/csv" onchange="onCsv(this.files[0])">
+        <div id="imp-preview" style="margin-top:12px"></div>
+      </div>`;
+  }
+  function onCsv(file){
+    if(!file) return;
+    const reader = new FileReader();
+    reader.onload = () => { _parsed = parseCSV(String(reader.result)); renderPreview(); };
+    reader.readAsText(file);
+  }
+  function parseCSV(text){
+    const rows = []; let i=0, field='', row=[], inQ=false;
+    while(i<text.length){
+      const c=text[i];
+      if(inQ){ if(c==='"'){ if(text[i+1]==='"'){field+='"';i++;} else inQ=false; } else field+=c; }
+      else { if(c==='"') inQ=true; else if(c===','){ row.push(field); field=''; } else if(c==='\n'||c==='\r'){ if(field!==''||row.length){ row.push(field); rows.push(row); row=[]; field=''; } if(c==='\r'&&text[i+1]==='\n') i++; } else field+=c; }
+      i++;
+    }
+    if(field!==''||row.length){ row.push(field); rows.push(row); }
+    if(!rows.length) return [];
+    const headers = rows[0].map(h=>h.trim());
+    return rows.slice(1).filter(r=>r.some(c=>c.trim())).map(r=>{
+      const o={}; headers.forEach((h,idx)=> o[h]=(r[idx]||'').trim());
+      const rent = Number(o.startingRent)||0;
+      return {
+        name:o.name, city:o.city, area:o.area, nearCollege:o.nearCollege, gender:o.gender||'Co-ed',
+        startingRent:rent, contactPhone:o.contactPhone, contactWhatsApp:o.contactWhatsApp,
+        foodIncluded:String(o.foodIncluded).toLowerCase()==='true',
+        amenities:(o.amenities||'').split(';').map(a=>a.trim()).filter(Boolean),
+        description:o.description,
+        lat:o.lat?Number(o.lat):undefined, lng:o.lng?Number(o.lng):undefined,
+        rooms: rent?[{type:'Standard room',rent}]:[],
+      };
+    });
+  }
+  function renderPreview(){
+    const ok = _parsed.filter(r=>r.name&&r.city);
+    $('imp-preview').innerHTML = `
+      <div class="kv"><b>${_parsed.length}</b> rows parsed, <b>${ok.length}</b> valid (need name + city).</div>
+      ${ok.slice(0,5).map(r=>`<div class="kv">• ${esc(r.name)} — ${esc(r.city)} · ${money(r.startingRent)}</div>`).join('')}
+      ${ok.length>5?`<div class="kv">…and ${ok.length-5} more</div>`:''}
+      <div class="acts">
+        <button class="neutral" onclick="doImport(false)">Import as pending (review later)</button>
+        <button class="approve" onclick="doImport(true)">Import &amp; publish now</button>
+      </div>`;
+  }
+  async function doImport(publish){
+    if(!_parsed.length) return toast('Nothing to import');
+    const res = await api('/api/admin/import', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({rows:_parsed, publish}) });
+    if(res.error) return toast(res.error);
+    toast(`Imported ${res.created} listing(s)${res.skipped?', '+res.skipped+' skipped':''}`);
+    _parsed=[]; $('imp-preview').innerHTML='';
   }
 </script>
 </body>

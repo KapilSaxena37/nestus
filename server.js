@@ -8,7 +8,8 @@ import {
   getListings, getListing, addListing, setStatus, getPending,
   addEnquiry, getEnquiries, cities, ensureSeed, USE_SUPABASE,
   findUserByEmail, addUser, getUserById, setShortlist, uploadPhoto,
-  getListingsByOwner, updateListing, addMessage, getMessages,
+  getListingsByOwner, updateListing, addMessage, getMessages, updateUserData,
+  getAllListings,
 } from './db.js';
 import {
   hashPassword, verifyPassword, signSession, verifySession,
@@ -34,6 +35,7 @@ const MIME = {
   '.webp': 'image/webp',
   '.gif': 'image/gif',
   '.ico': 'image/x-icon',
+  '.csv': 'text/csv',
 };
 
 const EXT_BY_TYPE = {
@@ -194,7 +196,8 @@ const server = createServer(async (req, res) => {
         // Only allow these fields to be changed by the owner.
         const allowed = ['name', 'area', 'nearCollege', 'distance', 'gender', 'startingRent',
           'foodIncluded', 'foodDetail', 'hasAC', 'availableFrom', 'description', 'amenities',
-          'rooms', 'rules', 'contactPhone', 'contactWhatsApp', 'photos', 'available', 'lat', 'lng'];
+          'rooms', 'rules', 'contactPhone', 'contactWhatsApp', 'photos', 'available', 'lat', 'lng',
+          'safety', 'mapLink'];
         const patch = {};
         for (const k of allowed) if (k in b) patch[k] = b[k];
         // A pure availability toggle stays live; real content edits go back for re-verification.
@@ -267,7 +270,17 @@ const server = createServer(async (req, res) => {
           }
         }
         const list = Object.values(convos).sort((a, b) => (a.lastAt < b.lastAt ? 1 : -1));
+        // Opening the inbox marks everything as seen (clears the bell).
+        await updateUserData(me.id, { messagesSeenAt: new Date().toISOString() });
         return send(res, 200, list);
+      }
+      if (path === '/api/messages/unread' && req.method === 'GET') {
+        const me = await currentUser(req);
+        if (!me) return send(res, 200, { count: 0 });
+        const since = me.messagesSeenAt || '1970-01-01';
+        const all = await getMessages();
+        const count = all.filter(m => m.toId === me.id && m.createdAt > since).length;
+        return send(res, 200, { count });
       }
       if (path === '/api/messages/thread' && req.method === 'GET') {
         const me = await currentUser(req);
@@ -306,6 +319,58 @@ const server = createServer(async (req, res) => {
       if (path === '/api/admin/pending' && req.method === 'GET') {
         if (!authed) return send(res, 401, { error: 'Unauthorized' });
         return send(res, 200, await getPending());
+      }
+      if (path === '/api/admin/listings' && req.method === 'GET') {
+        if (!authed) return send(res, 401, { error: 'Unauthorized' });
+        const all = await getAllListings();
+        all.sort((a, b) => (b.id - a.id));
+        return send(res, 200, all);
+      }
+      if (path === '/api/admin/stats' && req.method === 'GET') {
+        if (!authed) return send(res, 401, { error: 'Unauthorized' });
+        const all = await getAllListings();
+        const by = s => all.filter(l => (l.status || 'pending') === s);
+        const approved = by('approved'), pending = by('pending'), rejected = by('rejected');
+        const verifiedDates = approved.map(l => l.verifiedAt).filter(Boolean).sort();
+        const lastVerifiedAt = verifiedDates.length ? verifiedDates[verifiedDates.length - 1] : null;
+        const oldestVerifiedAt = verifiedDates.length ? verifiedDates[0] : null;
+        const byCity = {};
+        all.forEach(l => { byCity[l.city] = (byCity[l.city] || 0) + 1; });
+        return send(res, 200, {
+          total: all.length, approved: approved.length, pending: pending.length, rejected: rejected.length,
+          available: approved.filter(l => l.available !== false).length,
+          full: approved.filter(l => l.available === false).length,
+          lastVerifiedAt, oldestVerifiedAt, byCity,
+          pendingList: pending.map(l => ({ id: l.id, name: l.name, city: l.city, createdAt: l.createdAt })),
+        });
+      }
+      // Admin edits any listing (no re-verification forced).
+      const aum = path.match(/^\/api\/admin\/listings\/(\d+)\/update$/);
+      if (aum && req.method === 'POST') {
+        if (!authed) return send(res, 401, { error: 'Unauthorized' });
+        const b = await readBody(req);
+        const allowed = ['name', 'area', 'nearCollege', 'distance', 'city', 'gender', 'startingRent',
+          'foodIncluded', 'foodDetail', 'hasAC', 'availableFrom', 'description', 'amenities',
+          'rooms', 'rules', 'contactPhone', 'contactWhatsApp', 'photos', 'available', 'lat', 'lng',
+          'safety', 'mapLink'];
+        const patch = {};
+        for (const k of allowed) if (k in b) patch[k] = b[k];
+        const updated = await updateListing(aum[1], patch);
+        return updated ? send(res, 200, updated) : send(res, 404, { error: 'Not found' });
+      }
+      // Bulk import (rows already parsed to objects by the admin page).
+      if (path === '/api/admin/import' && req.method === 'POST') {
+        if (!authed) return send(res, 401, { error: 'Unauthorized' });
+        const b = await readBody(req);
+        const rows = Array.isArray(b.rows) ? b.rows : [];
+        let created = 0, skipped = 0;
+        for (const r of rows) {
+          if (!r.name || !r.city) { skipped++; continue; }
+          const listing = await addListing(r);
+          if (b.publish) await setStatus(listing.id, 'approved');
+          created++;
+        }
+        return send(res, 200, { created, skipped });
       }
       if (path === '/api/admin/enquiries' && req.method === 'GET') {
         if (!authed) return send(res, 401, { error: 'Unauthorized' });
