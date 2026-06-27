@@ -2,6 +2,18 @@
 const state = { filters: {}, chips: new Set(), currentListing: null, selectedRoom: null, user: null, authMode: 'signup', authRole: 'student', ownerPhotos: [], detailPhoto: 0, editId: null, ownerLat: null, ownerLng: null, roomRows: [] };
 
 function escAttr(s) { return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/"/g, '&quot;'); }
+function listingCode(id) { return 'NES-' + String(id).padStart(5, '0'); }
+
+async function searchMapView() {
+  const q = $('mapsearch').value.trim();
+  if (!q || !_mapView) return;
+  try {
+    const r = await fetch('https://nominatim.openstreetmap.org/search?format=json&limit=1&q=' + encodeURIComponent(q));
+    const d = await r.json();
+    if (d.length) _mapView.setView([parseFloat(d[0].lat), parseFloat(d[0].lon)], 14);
+    else toast('No match found');
+  } catch { toast('Search failed'); }
+}
 
 const CITIES = ['Nagpur', 'Indore', 'Pune', 'Bhopal', 'Kota'];
 const CITY_COORDS = {
@@ -134,6 +146,7 @@ function renderDetail() {
       <div>
         ${galleryHTML}
         <div class="dname">${l.name}</div>
+        <div style="font-size:11px;color:var(--muted);letter-spacing:.5px;margin-top:2px">ID: ${listingCode(l.id)}</div>
         <div class="dmeta">📍 ${l.area}, ${l.city}${l.distance ? ' · ' + l.distance : ''}
           ${l.verified ? ' · <b style="color:var(--green)">✓ Verified</b>' : ''}</div>
         ${l.mapLink ? `<div style="margin:-6px 0 10px"><a href="${l.mapLink}" target="_blank" rel="noopener" style="color:var(--purple2);font-weight:700">📍 Open in Google Maps</a></div>` : ''}
@@ -372,7 +385,7 @@ function updateNav() {
   $('nav-signup').style.display = loggedIn ? 'none' : '';
   $('nav-user').style.display = loggedIn ? 'inline-flex' : 'none';
   $('nav-dash').style.display = isOwner ? '' : 'none';
-  $('nav-list').style.display = isOwner ? 'none' : '';      // owners add via dashboard
+  $('nav-list').style.display = isOwner ? '' : 'none';      // visible only to logged-in owners
   $('nav-messages').style.display = loggedIn ? '' : 'none';
   $('nav-bell').style.display = loggedIn ? '' : 'none';
   $('nav-saved').style.display = loggedIn && !isOwner ? '' : 'none';
@@ -416,29 +429,54 @@ function openAuth(mode) {
   state.authMode = mode;
   switchAuthTab(mode);
   $('auth-err').style.display = 'none';
-  $('au-name').value = ''; $('au-email').value = ''; $('au-pass').value = '';
+  $('au-name').value = ''; $('au-email').value = ''; $('au-pass').value = ''; $('au-phone').value = '';
   $('auth-modal').classList.add('show');
 }
 function closeAuth() { $('auth-modal').classList.remove('show'); }
 
 function switchAuthTab(mode) {
   state.authMode = mode;
-  $('at-signup').classList.toggle('on', mode === 'signup');
-  $('at-login').classList.toggle('on', mode === 'login');
-  $('auth-name-field').style.display = mode === 'signup' ? 'block' : 'none';
-  $('auth-role-field').style.display = mode === 'signup' ? 'block' : 'none';
-  $('auth-submit').textContent = mode === 'signup' ? 'Create account' : 'Log in';
-  $('auth-sub').textContent = mode === 'signup'
+  const signup = mode === 'signup', login = mode === 'login', forgot = mode === 'forgot';
+  $('at-signup').classList.toggle('on', signup);
+  $('at-login').classList.toggle('on', login || forgot);
+  $('auth-name-field').style.display = signup ? 'block' : 'none';
+  $('auth-role-field').style.display = signup ? 'block' : 'none';
+  $('auth-phone-field').style.display = (signup || forgot) ? 'block' : 'none';
+  $('lbl-email').textContent = login ? 'Email or mobile number' : 'Email';
+  $('lbl-pass').textContent = forgot ? 'New password' : 'Password';
+  $('auth-forgot-link').style.display = login ? 'block' : 'none';
+  $('auth-submit').textContent = signup ? 'Create account' : forgot ? 'Reset password' : 'Log in';
+  $('auth-sub').textContent = signup
     ? 'Create a free account — students save hostels, owners list properties.'
-    : 'Welcome back — log in to your account.';
+    : forgot
+      ? 'Enter your email and registered mobile number to set a new password.'
+      : 'Welcome back — log in to your account.';
   $('auth-err').style.display = 'none';
 }
 
 async function submitAuth() {
   const email = $('au-email').value.trim(), password = $('au-pass').value;
   const err = $('auth-err');
-  const body = { email, password };
-  if (state.authMode === 'signup') { body.name = $('au-name').value.trim(); body.role = state.authRole; }
+
+  if (state.authMode === 'forgot') {
+    const res = await fetch('/api/auth/forgot', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, phone: $('au-phone').value.trim(), newPassword: password }),
+    });
+    const data = await res.json();
+    if (!res.ok) { err.textContent = data.error || 'Could not reset'; err.style.display = 'block'; return; }
+    toast('Password reset — please log in with your new password.');
+    switchAuthTab('login');
+    $('au-pass').value = '';
+    return;
+  }
+
+  const body = state.authMode === 'login' ? { login: email, password } : { email, password };
+  if (state.authMode === 'signup') {
+    body.name = $('au-name').value.trim();
+    body.phone = $('au-phone').value.trim();
+    body.role = state.authRole;
+  }
   const res = await fetch('/api/auth/' + state.authMode, {
     method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
   });
@@ -678,7 +716,7 @@ async function loadDashboard() {
     return `<div class="dash-card">
       <div class="dash-thumb" style="${photo ? `background-image:url('${photo}')` : ''}">${photo ? '' : '🏠'}</div>
       <div class="dash-main">
-        <div class="dn">${l.name}</div>
+        <div class="dn">${l.name} <span style="font-weight:500;color:var(--muted);font-size:11px">${listingCode(l.id)}</span></div>
         <div class="dm">${l.area || ''}${l.area ? ', ' : ''}${l.city} · ${money(l.startingRent)}/mo onwards</div>
         <span class="statusbadge st-${st}">${st === 'approved' ? '✓ Live' : st === 'pending' ? '⏳ Awaiting review' : 'Rejected'}</span>
         ${avail ? '<span class="statusbadge st-rejected" style="margin-left:6px">Marked full</span>' : ''}

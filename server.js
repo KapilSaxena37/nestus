@@ -9,7 +9,7 @@ import {
   addEnquiry, getEnquiries, cities, ensureSeed, USE_SUPABASE,
   findUserByEmail, addUser, getUserById, setShortlist, uploadPhoto,
   getListingsByOwner, updateListing, addMessage, getMessages, updateUserData,
-  getAllListings,
+  getAllListings, findUserByPhone, getAllUsers, deleteListing, normalizePhone,
 } from './db.js';
 import {
   hashPassword, verifyPassword, signSession, verifySession,
@@ -61,7 +61,7 @@ async function currentUser(req) {
   return await getUserById(uid);
 }
 function publicUser(u) {
-  return { id: u.id, name: u.name, email: u.email, role: u.role || 'student', shortlist: u.shortlist || [] };
+  return { id: u.id, name: u.name, email: u.email, phone: u.phone || '', role: u.role || 'student', shortlist: u.shortlist || [] };
 }
 
 function readBody(req) {
@@ -141,25 +141,39 @@ const server = createServer(async (req, res) => {
       // ----- Auth -----
       if (path === '/api/auth/signup' && req.method === 'POST') {
         const b = await readBody(req);
-        const name = (b.name || '').trim(), email = (b.email || '').trim();
+        const name = (b.name || '').trim(), email = (b.email || '').trim(), phone = (b.phone || '').trim();
         if (!name || !email || !b.password) return send(res, 400, { error: 'Name, email and password are required' });
         if (!/^\S+@\S+\.\S+$/.test(email)) return send(res, 400, { error: 'Please enter a valid email' });
+        if (normalizePhone(phone).length !== 10) return send(res, 400, { error: 'Please enter a valid 10-digit mobile number' });
         if (String(b.password).length < 6) return send(res, 400, { error: 'Password must be at least 6 characters' });
         if (await findUserByEmail(email)) return send(res, 409, { error: 'That email is already registered — try logging in.' });
+        if (await findUserByPhone(phone)) return send(res, 409, { error: 'That mobile number is already registered — try logging in.' });
         const role = b.role === 'owner' ? 'owner' : 'student';
         const { salt, hash } = hashPassword(String(b.password));
-        const user = await addUser({ email, name, salt, hash, role });
+        const user = await addUser({ email, name, phone, salt, hash, role });
         if (!user) return send(res, 409, { error: 'That email is already registered.' });
         setSessionCookie(res, signSession(user.id));
         return send(res, 201, publicUser(user));
       }
       if (path === '/api/auth/login' && req.method === 'POST') {
         const b = await readBody(req);
-        const user = await findUserByEmail((b.email || '').trim());
+        const id = (b.login || b.email || '').trim();
+        let user = await findUserByEmail(id);
+        if (!user && normalizePhone(id).length === 10) user = await findUserByPhone(id);
         if (!user || !verifyPassword(String(b.password || ''), user.salt, user.hash))
-          return send(res, 401, { error: 'Wrong email or password' });
+          return send(res, 401, { error: 'Wrong login or password' });
         setSessionCookie(res, signSession(user.id));
         return send(res, 200, publicUser(user));
+      }
+      if (path === '/api/auth/forgot' && req.method === 'POST') {
+        const b = await readBody(req);
+        const user = await findUserByEmail((b.email || '').trim());
+        if (!user || normalizePhone(user.phone) !== normalizePhone(b.phone))
+          return send(res, 400, { error: 'No account matches that email and mobile number.' });
+        if (String(b.newPassword || '').length < 6) return send(res, 400, { error: 'New password must be at least 6 characters' });
+        const { salt, hash } = hashPassword(String(b.newPassword));
+        await updateUserData(user.id, { salt, hash });
+        return send(res, 200, { ok: true });
       }
       if (path === '/api/auth/logout' && req.method === 'POST') {
         clearSessionCookie(res);
@@ -336,11 +350,19 @@ const server = createServer(async (req, res) => {
         const oldestVerifiedAt = verifiedDates.length ? verifiedDates[0] : null;
         const byCity = {};
         all.forEach(l => { byCity[l.city] = (byCity[l.city] || 0) + 1; });
+        // Duplicate detection: same name+city.
+        const groups = {};
+        all.forEach(l => {
+          const key = `${(l.name || '').toLowerCase().trim()}|${(l.city || '').toLowerCase().trim()}`;
+          (groups[key] = groups[key] || []).push({ id: l.id, name: l.name, city: l.city, status: l.status });
+        });
+        const duplicates = Object.values(groups).filter(g => g.length > 1);
         return send(res, 200, {
           total: all.length, approved: approved.length, pending: pending.length, rejected: rejected.length,
           available: approved.filter(l => l.available !== false).length,
           full: approved.filter(l => l.available === false).length,
           lastVerifiedAt, oldestVerifiedAt, byCity,
+          duplicates,
           pendingList: pending.map(l => ({ id: l.id, name: l.name, city: l.city, createdAt: l.createdAt })),
         });
       }
@@ -363,14 +385,49 @@ const server = createServer(async (req, res) => {
         if (!authed) return send(res, 401, { error: 'Unauthorized' });
         const b = await readBody(req);
         const rows = Array.isArray(b.rows) ? b.rows : [];
-        let created = 0, skipped = 0;
+        const existing = await getAllListings();
+        const seen = new Set(existing.map(l => `${(l.name || '').toLowerCase().trim()}|${(l.city || '').toLowerCase().trim()}`));
+        let created = 0, skipped = 0, duplicates = 0;
         for (const r of rows) {
           if (!r.name || !r.city) { skipped++; continue; }
+          const key = `${r.name.toLowerCase().trim()}|${r.city.toLowerCase().trim()}`;
+          if (seen.has(key)) { duplicates++; continue; } // skip duplicates (prevents re-import multiplying rows)
+          seen.add(key);
           const listing = await addListing(r);
           if (b.publish) await setStatus(listing.id, 'approved');
           created++;
         }
-        return send(res, 200, { created, skipped });
+        return send(res, 200, { created, skipped, duplicates });
+      }
+      // Delete a single listing.
+      const adm = path.match(/^\/api\/admin\/listings\/(\d+)\/delete$/);
+      if (adm && req.method === 'POST') {
+        if (!authed) return send(res, 401, { error: 'Unauthorized' });
+        await deleteListing(adm[1]);
+        return send(res, 200, { ok: true });
+      }
+      // Delete multiple listings.
+      if (path === '/api/admin/listings/delete' && req.method === 'POST') {
+        if (!authed) return send(res, 401, { error: 'Unauthorized' });
+        const b = await readBody(req);
+        const ids = Array.isArray(b.ids) ? b.ids : [];
+        for (const id of ids) await deleteListing(id);
+        return send(res, 200, { deleted: ids.length });
+      }
+      // List users (for admin password reset).
+      if (path === '/api/admin/users' && req.method === 'GET') {
+        if (!authed) return send(res, 401, { error: 'Unauthorized' });
+        return send(res, 200, await getAllUsers());
+      }
+      // Admin resets a user's password.
+      const aup = path.match(/^\/api\/admin\/users\/(\d+)\/password$/);
+      if (aup && req.method === 'POST') {
+        if (!authed) return send(res, 401, { error: 'Unauthorized' });
+        const b = await readBody(req);
+        if (String(b.password || '').length < 6) return send(res, 400, { error: 'Password must be at least 6 characters' });
+        const { salt, hash } = hashPassword(String(b.password));
+        const updated = await updateUserData(aup[1], { salt, hash });
+        return updated ? send(res, 200, { ok: true }) : send(res, 404, { error: 'User not found' });
       }
       if (path === '/api/admin/enquiries' && req.method === 'GET') {
         if (!authed) return send(res, 401, { error: 'Unauthorized' });

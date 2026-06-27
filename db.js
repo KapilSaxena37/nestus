@@ -52,6 +52,11 @@ function applyFilters(rows, f = {}) {
   return out;
 }
 
+export function normalizePhone(p) {
+  const d = String(p || '').replace(/\D/g, '');
+  return d.length > 10 ? d.slice(-10) : d; // compare last 10 digits (India mobile)
+}
+
 function newListing(data) {
   return {
     status: 'pending', verified: false, rating: 0, reviews: 0,
@@ -142,13 +147,13 @@ const SB = {
     const rows = await sb(`users?email=eq.${encodeURIComponent(email.toLowerCase())}&select=id,email,data`);
     return rows.length ? { id: rows[0].id, email: rows[0].email, ...rows[0].data } : null;
   },
-  async addUser({ email, name, salt, hash, role = 'student' }) {
+  async addUser({ email, name, salt, hash, role = 'student', phone = '' }) {
     try {
       const row = (await sb('users', {
         method: 'POST', headers: { Prefer: 'return=representation' },
         body: JSON.stringify({
           email: email.toLowerCase(),
-          data: { name, salt, hash, role, shortlist: [], createdAt: new Date().toISOString() },
+          data: { name, salt, hash, role, phone, shortlist: [], createdAt: new Date().toISOString() },
         }),
       }))[0];
       return { id: row.id, email: row.email, ...row.data };
@@ -156,6 +161,21 @@ const SB = {
       if (/409|duplicate|unique/i.test(String(e))) return null; // email taken
       throw e;
     }
+  },
+  async findUserByPhone(phone) {
+    const norm = normalizePhone(phone);
+    if (!norm) return null;
+    const rows = await sb('users?select=id,email,data');
+    const row = rows.find(r => normalizePhone(r.data && r.data.phone) === norm);
+    return row ? { id: row.id, email: row.email, ...row.data } : null;
+  },
+  async getAllUsers() {
+    const rows = await sb('users?select=id,email,data');
+    return rows.map(r => ({ id: r.id, email: r.email, name: r.data.name, phone: r.data.phone || '', role: r.data.role || 'student' }));
+  },
+  async deleteListing(id) {
+    await sb(`listings?id=eq.${Number(id)}`, { method: 'DELETE' });
+    return true;
   },
   async getListingsByOwner(ownerId) {
     const rows = await sb('listings?select=id,data');
@@ -252,12 +272,26 @@ const FILE = {
   async findUserByEmail(email) {
     return fileRead().users.find(u => u.email.toLowerCase() === email.toLowerCase()) || null;
   },
-  async addUser({ email, name, salt, hash, role = 'student' }) {
+  async addUser({ email, name, salt, hash, role = 'student', phone = '' }) {
     const db = fileRead();
     if (db.users.find(u => u.email.toLowerCase() === email.toLowerCase())) return null;
     const id = db.users.reduce((m, u) => Math.max(m, u.id), 0) + 1;
-    const user = { id, email: email.toLowerCase(), name, salt, hash, role, shortlist: [], createdAt: new Date().toISOString() };
+    const user = { id, email: email.toLowerCase(), name, salt, hash, role, phone, shortlist: [], createdAt: new Date().toISOString() };
     db.users.push(user); fileWrite(db); return user;
+  },
+  async findUserByPhone(phone) {
+    const norm = normalizePhone(phone);
+    if (!norm) return null;
+    return fileRead().users.find(u => normalizePhone(u.phone) === norm) || null;
+  },
+  async getAllUsers() {
+    return fileRead().users.map(u => ({ id: u.id, email: u.email, name: u.name, phone: u.phone || '', role: u.role || 'student' }));
+  },
+  async deleteListing(id) {
+    const db = fileRead();
+    const before = db.listings.length;
+    db.listings = db.listings.filter(l => l.id !== Number(id));
+    fileWrite(db); return db.listings.length < before;
   },
   async getListingsByOwner(ownerId) {
     return fileRead().listings.filter(l => l.ownerId === Number(ownerId));
@@ -311,6 +345,9 @@ export const getPending   = (...a) => impl.getPending(...a);
 export const addEnquiry   = (...a) => impl.addEnquiry(...a);
 export const getEnquiries = (...a) => impl.getEnquiries(...a);
 export const findUserByEmail = (...a) => impl.findUserByEmail(...a);
+export const findUserByPhone = (...a) => impl.findUserByPhone(...a);
+export const getAllUsers  = (...a) => impl.getAllUsers(...a);
+export const deleteListing = (...a) => impl.deleteListing(...a);
 export const addUser      = (...a) => impl.addUser(...a);
 export const getUserById  = (...a) => impl.getUserById(...a);
 export const setShortlist = (...a) => impl.setShortlist(...a);
