@@ -4,9 +4,11 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>NestUs — Admin</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
 <link rel="stylesheet" href="/styles.css">
 <style>
-  .admin-wrap{max-width:920px;margin:0 auto;padding:24px 18px 60px;}
+  .admin-wrap{max-width:960px;margin:0 auto;padding:24px 18px 60px;}
   .keybar{background:#fff;border:1px solid var(--line);border-radius:12px;padding:16px;display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:20px;}
   .keybar input{flex:1;min-width:180px;border:1px solid var(--line);border-radius:8px;padding:10px;}
   .keybar button{background:var(--purple2);color:#fff;border:none;padding:10px 18px;border-radius:8px;font-weight:700;cursor:pointer;}
@@ -16,27 +18,32 @@
   .pcard{background:#fff;border:1px solid var(--line);border-radius:14px;padding:16px;margin-bottom:12px;}
   .pcard h3{font-size:16px;font-weight:800;}
   .pcard .meta{color:var(--muted);font-size:13px;margin:4px 0 10px;}
-  .acts{display:flex;gap:10px;flex-wrap:wrap;margin-top:10px;}
-  .acts button{border:none;padding:9px 16px;border-radius:8px;font-weight:700;cursor:pointer;}
+  .acts{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;}
+  .acts button{border:none;padding:8px 14px;border-radius:8px;font-weight:700;cursor:pointer;font-size:13px;}
   .approve{background:var(--green);color:#fff;}
   .reject{background:#fff;color:#b00;border:1.5px solid #e0b4b4;}
   .neutral{background:#fff;color:var(--purple2);border:1.5px solid var(--purple2);}
-  .statgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:12px;margin-bottom:16px;}
-  .statbox{background:#fff;border:1px solid var(--line);border-radius:14px;padding:18px;text-align:center;}
-  .statbox .n{font-size:28px;font-weight:800;color:var(--purple2);}
+  .statgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:12px;margin-bottom:16px;}
+  .statbox{background:#fff;border:1px solid var(--line);border-radius:14px;padding:16px;text-align:center;}
+  .statbox .n{font-size:26px;font-weight:800;color:var(--purple2);}
   .statbox .l{font-size:12px;color:var(--muted);margin-top:4px;}
   .detail-toggle{cursor:pointer;color:var(--purple2);font-weight:700;font-size:13px;}
   .kv{font-size:13px;margin:3px 0;} .kv b{color:var(--ink);}
   .editgrid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:10px;}
-  .editgrid .f label{font-size:11px;color:var(--muted);display:block;margin-bottom:3px;}
-  .editgrid .f input,.editgrid .f select,.editgrid .f textarea{width:100%;border:1px solid var(--line);border-radius:8px;padding:8px;font-size:13px;}
+  .f label{font-size:11px;color:var(--muted);display:block;margin-bottom:3px;}
+  .f input,.f select,.f textarea{width:100%;border:1px solid var(--line);border-radius:8px;padding:8px;font-size:13px;}
   .filterbar{display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;}
   .filterbar button{border:1px solid var(--line);background:#fff;padding:6px 12px;border-radius:16px;font-size:12px;font-weight:600;cursor:pointer;color:var(--muted);}
   .filterbar button.on{background:var(--purple);color:#fff;border-color:var(--purple);}
   .st{display:inline-block;font-size:11px;font-weight:700;padding:3px 9px;border-radius:20px;}
-  .st.approved{background:#e2f3ec;color:var(--green);}.st.pending{background:#fdf1dc;color:#9a6a00;}.st.rejected{background:#fae3e3;color:#b00;}
+  .st.approved{background:#e2f3ec;color:var(--green);}.st.pending{background:#fdf1dc;color:#9a6a00;}.st.rejected{background:#fae3e3;color:#b00;}.st.unv{background:#e7e4fb;color:#3C3489;}
   .imp textarea{width:100%;min-height:90px;border:1px solid var(--line);border-radius:10px;padding:10px;font-size:13px;font-family:monospace;}
   .thumb{width:70px;height:54px;object-fit:cover;border-radius:8px;margin:2px;}
+  .pp{position:relative;display:inline-block;margin:2px;}
+  .pp button{position:absolute;top:1px;right:1px;background:rgba(0,0,0,.6);color:#fff;border:none;border-radius:50%;width:18px;height:18px;font-size:11px;cursor:pointer;}
+  .roomedit{border:1px solid var(--line);border-radius:8px;padding:10px;margin-bottom:8px;background:#fafaff;}
+  .checks{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin:6px 0;font-size:13px;}
+  .checks label{display:flex;align-items:center;gap:6px;}
 </style>
 </head>
 <body>
@@ -51,12 +58,10 @@
       <input id="key" type="password" placeholder="Enter admin key" onkeydown="if(event.key==='Enter')connect()">
       <button onclick="connect()">Connect</button>
     </div>
-
     <div id="panel" style="display:none">
       <div class="tabs">
         <button id="tab-dash" class="on" onclick="show('dash')">📊 Dashboard</button>
         <button id="tab-all" onclick="show('all')">All listings</button>
-        <button id="tab-pending" onclick="show('pending')">Pending</button>
         <button id="tab-enq" onclick="show('enq')">Enquiries</button>
         <button id="tab-users" onclick="show('users')">Users</button>
         <button id="tab-import" onclick="show('import')">Import CSV</button>
@@ -64,86 +69,96 @@
       <div id="content"></div>
     </div>
   </div>
-
   <div class="toast" id="toast"></div>
 <script>
-  let KEY = '';
-  const $ = id => document.getElementById(id);
-  const money = n => '₹' + Number(n || 0).toLocaleString('en-IN');
-  const esc = s => String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
-  function toast(m){ const t=$('toast'); t.textContent=m; t.classList.add('show'); clearTimeout(t._t); t._t=setTimeout(()=>t.classList.remove('show'),2500); }
-  async function api(path, opts){ return fetch(path + (path.includes('?')?'&':'?') + 'key=' + encodeURIComponent(KEY), opts).then(r=>r.json()); }
+  const CITIES = ['Nagpur','Indore','Pune','Bhopal','Kota'];
+  const CITY_COORDS = {Nagpur:[21.1458,79.0882],Indore:[22.7196,75.8577],Pune:[18.5204,73.8567],Bhopal:[23.2599,77.4126],Kota:[25.2138,75.8648]};
+  const AMEN = ['WiFi','CCTV','Laundry','Water purifier','Parking','Power backup','AC','Study room'];
+  let KEY='';
+  const $=id=>document.getElementById(id);
+  const money=n=>'₹'+Number(n||0).toLocaleString('en-IN');
+  const esc=s=>String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/"/g,'&quot;');
+  const code=id=>'NES-'+String(id).padStart(5,'0');
+  function toast(m){const t=$('toast');t.textContent=m;t.classList.add('show');clearTimeout(t._t);t._t=setTimeout(()=>t.classList.remove('show'),2500);}
+  async function api(path,opts){return fetch(path+(path.includes('?')?'&':'?')+'key='+encodeURIComponent(KEY),opts).then(r=>r.json());}
+  function ago(iso){if(!iso)return '—';const d=(Date.now()-new Date(iso))/86400000;if(d<1)return 'today';if(d<2)return 'yesterday';return Math.floor(d)+' days ago';}
+  function dt(iso){try{return new Date(iso).toLocaleString('en-IN');}catch{return iso||'—';}}
+
+  function stageOf(l){
+    const s=l.status||'pending';
+    if(s==='draft')return {key:'raw',label:'Raw (not live)',cls:'pending'};
+    if(s==='pending')return {key:'pending',label:'Pending',cls:'pending'};
+    if(s==='rejected')return {key:'rejected',label:'Rejected',cls:'rejected'};
+    if(s==='approved'&&l.verified)return {key:'verified',label:'✓ Verified',cls:'approved'};
+    return {key:'unverified',label:'Live · Unverified',cls:'unv'};
+  }
 
   async function connect(){
-    KEY = $('key').value.trim();
-    const r = await fetch('/api/admin/stats?key=' + encodeURIComponent(KEY));
-    if (r.status === 401) { toast('Wrong admin key'); return; }
-    $('panel').style.display = 'block';
-    show('dash');
+    KEY=$('key').value.trim();
+    const r=await fetch('/api/admin/stats?key='+encodeURIComponent(KEY));
+    if(r.status===401){toast('Wrong admin key');return;}
+    $('panel').style.display='block';show('dash');
   }
   function show(t){
-    ['dash','all','pending','enq','users','import'].forEach(x => $('tab-'+x).classList.toggle('on', x===t));
-    ({dash:loadDash, all:loadAll, pending:loadPending, enq:loadEnq, users:loadUsers, import:loadImport})[t]();
+    ['dash','all','enq','users','import'].forEach(x=>$('tab-'+x).classList.toggle('on',x===t));
+    ({dash:loadDash,all:loadAll,enq:loadEnq,users:loadUsers,import:loadImport})[t]();
   }
-  const code = id => 'NES-' + String(id).padStart(5,'0');
-  function ago(iso){ if(!iso) return '—'; const d=(Date.now()-new Date(iso))/86400000; if(d<1) return 'today'; if(d<2) return 'yesterday'; return Math.floor(d)+' days ago'; }
-  function dt(iso){ try{ return new Date(iso).toLocaleString('en-IN'); }catch{ return iso||'—'; } }
 
   // ---- Dashboard ----
   async function loadDash(){
-    const s = await api('/api/admin/stats');
-    const cities = Object.entries(s.byCity||{}).map(([c,n])=>`${c}: ${n}`).join(' · ') || '—';
-    $('content').innerHTML = `
+    const s=await api('/api/admin/stats');
+    const cities=Object.entries(s.byCity||{}).map(([c,n])=>`${c}: ${n}`).join(' · ')||'—';
+    $('content').innerHTML=`
       <div class="statgrid">
-        <div class="statbox"><div class="n">${s.total}</div><div class="l">Total listings</div></div>
-        <div class="statbox"><div class="n" style="color:var(--green)">${s.approved}</div><div class="l">Verified &amp; live</div></div>
-        <div class="statbox"><div class="n" style="color:#9a6a00">${s.pending}</div><div class="l">Awaiting review</div></div>
+        <div class="statbox"><div class="n">${s.total}</div><div class="l">Total</div></div>
+        <div class="statbox"><div class="n" style="color:#9a6a00">${s.raw||0}</div><div class="l">Raw (not live)</div></div>
+        <div class="statbox"><div class="n" style="color:#3C3489">${s.unverified||0}</div><div class="l">Live · Unverified</div></div>
+        <div class="statbox"><div class="n" style="color:var(--green)">${s.verified||0}</div><div class="l">Verified</div></div>
+        <div class="statbox"><div class="n">${s.pending||0}</div><div class="l">Owner pending</div></div>
         <div class="statbox"><div class="n" style="color:#b00">${s.rejected}</div><div class="l">Rejected</div></div>
-        <div class="statbox"><div class="n">${s.available}</div><div class="l">Rooms available</div></div>
-        <div class="statbox"><div class="n">${s.full}</div><div class="l">Marked full</div></div>
       </div>
       <div class="pcard">
         <div class="kv"><b>Last verification:</b> ${dt(s.lastVerifiedAt)} (${ago(s.lastVerifiedAt)})</div>
-        <div class="kv"><b>Oldest live verification:</b> ${dt(s.oldestVerifiedAt)} (${ago(s.oldestVerifiedAt)})</div>
+        <div class="kv"><b>Rooms available / full:</b> ${s.available} / ${s.full}</div>
         <div class="kv"><b>By city:</b> ${cities}</div>
-        ${s.pending>0 ? `<div style="margin-top:10px"><span class="detail-toggle" onclick="this.nextElementSibling.style.display=this.nextElementSibling.style.display==='none'?'block':'none'">▸ ${s.pending} awaiting review — show</span><div style="display:none;margin-top:8px">${(s.pendingList||[]).map(p=>`<div class="kv">• ${esc(p.name)} (${esc(p.city)}) — submitted ${ago(p.createdAt)}</div>`).join('')}</div></div>` : ''}
       </div>
-      ${s.pending>0 ? `<button class="approve" style="border:none;padding:10px 18px;border-radius:8px;font-weight:700;cursor:pointer" onclick="show('pending')">Review ${s.pending} pending →</button>` : ''}
-      ${(s.duplicates&&s.duplicates.length) ? `
+      ${(s.duplicates&&s.duplicates.length)?`
         <div class="pcard" style="border-color:#e0b4b4;background:#fff7f7">
-          <h3 style="color:#b00">⚠ Possible duplicate entries (${s.duplicates.length})</h3>
-          <div class="meta">Same name + city appears more than once. Use the "All listings" tab to delete extras.</div>
-          ${s.duplicates.map(g=>`<div class="kv">• <b>${esc(g[0].name)}</b> (${esc(g[0].city)}) — ${g.length} copies: IDs ${g.map(x=>code(x.id)).join(', ')}</div>`).join('')}
-          <button class="neutral" style="margin-top:10px;padding:8px 14px;border-radius:8px;cursor:pointer" onclick="show('all')">Go clean up →</button>
-        </div>` : ''}`;
+          <h3 style="color:#b00">⚠ Possible duplicates (${s.duplicates.length})</h3>
+          ${s.duplicates.map(g=>`<div class="kv">• <b>${esc(g[0].name)}</b> (${esc(g[0].city)}) — ${g.length} copies: ${g.map(x=>code(x.id)).join(', ')}</div>`).join('')}
+          <button class="neutral" style="margin-top:10px;padding:8px 14px;border-radius:8px;cursor:pointer" onclick="show('all')">Clean up →</button>
+        </div>`:''}`;
   }
 
-  // ---- All listings (with full details + edit) ----
-  let _all = [], _filter = 'all';
-  async function loadAll(){
-    _all = await api('/api/admin/listings');
-    renderAll();
+  // ---- All listings ----
+  let _all=[],_filter='all';
+  async function loadAll(){_all=await api('/api/admin/listings');renderAll();}
+  function setFilter(f){_filter=f;renderAll();}
+  function matchFilter(l,f){
+    const k=stageOf(l).key;
+    if(f==='all')return true;
+    if(f==='review')return k==='raw'||k==='pending';
+    return k===f;
   }
-  function setFilter(f){ _filter=f; renderAll(); }
   function renderAll(){
-    const list = _filter==='all' ? _all : _all.filter(l => (l.status||'pending')===_filter);
-    $('content').innerHTML = `
-      <div class="filterbar">
-        ${['all','approved','pending','rejected'].map(f=>`<button class="${_filter===f?'on':''}" onclick="setFilter('${f}')">${f==='all'?'All':f[0].toUpperCase()+f.slice(1)} (${f==='all'?_all.length:_all.filter(l=>(l.status||'pending')===f).length})</button>`).join('')}
-      </div>
+    const counts=f=>_all.filter(l=>matchFilter(l,f)).length;
+    const list=_all.filter(l=>matchFilter(l,_filter));
+    const tabs=[['all','All'],['review','To review'],['unverified','Unverified'],['verified','Verified'],['rejected','Rejected']];
+    $('content').innerHTML=`
+      <div class="filterbar">${tabs.map(([f,n])=>`<button class="${_filter===f?'on':''}" onclick="setFilter('${f}')">${n} (${counts(f)})</button>`).join('')}</div>
       <div style="display:flex;gap:10px;align-items:center;margin-bottom:12px;flex-wrap:wrap">
-        <label style="font-size:13px;font-weight:600"><input type="checkbox" id="selall" onchange="selectAll(this.checked)"> Select all</label>
+        <label style="font-size:13px;font-weight:600"><input type="checkbox" id="selall" onchange="document.querySelectorAll('.sel').forEach(c=>c.checked=this.checked)"> Select all</label>
         <button class="reject" style="padding:8px 14px;border-radius:8px;cursor:pointer" onclick="deleteSelected()">🗑 Delete selected</button>
       </div>
-      ${list.length ? list.map(rowHTML).join('') : '<div class="empty">No listings in this filter.</div>'}`;
+      ${list.length?list.map(rowHTML).join(''):'<div class="empty">No listings here.</div>'}`;
   }
   function rowHTML(l){
-    const st = l.status || 'pending';
+    const st=stageOf(l);
     return `<div class="pcard">
       <div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap">
         <div style="display:flex;gap:10px;align-items:flex-start">
           <input type="checkbox" class="sel" value="${l.id}" style="margin-top:4px">
-          <div><h3>${esc(l.name)} <span class="st ${st}">${st}</span></h3>
+          <div><h3>${esc(l.name)} <span class="st ${st.cls}">${st.label}</span></h3>
             <div class="meta">${code(l.id)} · ${esc(l.area||'')}${l.area?', ':''}${esc(l.city)} · ${money(l.startingRent)}/mo · ${esc(l.gender||'')}</div></div>
         </div>
         <div><span class="detail-toggle" onclick="toggleDetail(${l.id})">View / edit ▾</span></div>
@@ -151,211 +166,278 @@
       <div id="d-${l.id}" style="display:none;border-top:1px solid var(--line);margin-top:10px;padding-top:10px"></div>
     </div>`;
   }
-  function selectAll(on){ document.querySelectorAll('.sel').forEach(c=>c.checked=on); }
   async function deleteSelected(){
-    const ids = [...document.querySelectorAll('.sel:checked')].map(c=>Number(c.value));
-    if(!ids.length) return toast('Select at least one listing');
-    if(!confirm(`Delete ${ids.length} listing(s)? This cannot be undone.`)) return;
-    const res = await api('/api/admin/listings/delete', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ids}) });
-    toast(`Deleted ${res.deleted||ids.length}`); await loadAll();
-  }
-  async function deleteOne(id){
-    if(!confirm('Delete this listing? This cannot be undone.')) return;
-    await fetch(`/api/admin/listings/${id}/delete?key=`+encodeURIComponent(KEY), {method:'POST'});
-    toast('Deleted'); await loadAll();
+    const ids=[...document.querySelectorAll('.sel:checked')].map(c=>Number(c.value));
+    if(!ids.length)return toast('Select at least one');
+    if(!confirm(`Delete ${ids.length} listing(s)? Cannot be undone.`))return;
+    await api('/api/admin/listings/delete',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({ids})});
+    toast('Deleted');await loadAll();
   }
   function toggleDetail(id){
-    const box = $('d-'+id);
-    if (box.style.display==='block'){ box.style.display='none'; return; }
+    const box=$('d-'+id);
+    if(box.style.display==='block'){box.style.display='none';return;}
     box.style.display='block';
-    const l = _all.find(x=>x.id===id);
-    const rooms = (l.rooms||[]).map(r=>`<div class="kv">• ${esc(r.type)} — ${money(r.rent)}/mo ${[r.ac?'AC':'',r.washroom?'Attached washroom':'',r.furnished?'Furnished':''].filter(Boolean).join(', ')}</div>`).join('') || '<div class="kv">—</div>';
-    const sf = l.safety||{};
-    const safety = [sf.guard&&'Security guard',sf.warden&&'Warden',sf.biometric&&'Biometric entry',sf.visitorRegister&&'Visitor register'].filter(Boolean).join(', ') || '—';
-    const photos = (l.photos||[]).map(p=>`<img class="thumb" src="${p}">`).join('') || '—';
-    box.innerHTML = `
-      <div class="kv"><b>Owner:</b> ${esc(l.ownerName||'—')} (id ${l.ownerId||'—'})</div>
-      <div class="kv"><b>Near:</b> ${esc(l.nearCollege||'—')} · <b>Food:</b> ${l.foodIncluded?'Yes':'No'} · <b>Available from:</b> ${esc(l.availableFrom||'—')}</div>
+    const l=_all.find(x=>x.id===id),st=stageOf(l);
+    const rooms=(l.rooms||[]).map(r=>`<div class="kv">• ${esc(r.type)} — ${money(r.rent)}/mo ${[r.ac?'AC':'',r.washroom?'Attached washroom':'',r.furnished?'Furnished':''].filter(Boolean).join(', ')}</div>`).join('')||'<div class="kv">—</div>';
+    const sf=l.safety||{};
+    const safety=[sf.guard&&'Security guard',sf.warden&&'Warden',sf.biometric&&'Biometric',sf.visitorRegister&&'Visitor register'].filter(Boolean).join(', ')||'—';
+    const photos=(l.photos||[]).map(p=>`<img class="thumb" src="${p}">`).join('')||'—';
+    // Stage-specific actions
+    let actions='';
+    if(st.key==='raw'||st.key==='pending'||st.key==='rejected'){
+      actions=`<button class="neutral" onclick="stageAct(${l.id},'publish')">Send live (unverified)</button>
+               <button class="approve" onclick="stageAct(${l.id},'verify')">✓ Verify &amp; publish</button>
+               ${st.key!=='rejected'?`<button class="reject" onclick="stageAct(${l.id},'reject')">Reject</button>`:''}`;
+    } else if(st.key==='unverified'){
+      actions=`<button class="approve" onclick="stageAct(${l.id},'verify')">✓ Mark verified</button>
+               <button class="neutral" onclick="stageAct(${l.id},'draft')">Pull to raw</button>`;
+    } else if(st.key==='verified'){
+      actions=`<button class="neutral" onclick="stageAct(${l.id},'unverify')">Unverify</button>`;
+    }
+    box.innerHTML=`
+      <div class="kv"><b>Owner:</b> ${esc(l.ownerName||'—')} (${l.ownerId||'—'})</div>
+      <div class="kv"><b>Near:</b> ${esc(l.nearCollege||'—')} · <b>Food:</b> ${l.foodIncluded?'Yes':'No'} ${esc(l.foodDetail||'')} · <b>From:</b> ${esc(l.availableFrom||'—')}</div>
       <div class="kv"><b>Contact:</b> ${esc(l.contactPhone||'—')} · WA: ${esc(l.contactWhatsApp||'—')}</div>
       <div class="kv"><b>Amenities:</b> ${(l.amenities||[]).join(', ')||'—'}</div>
       <div class="kv"><b>Safety:</b> ${safety} ${sf.checkIn?'· in '+esc(sf.checkIn):''} ${sf.checkOut?'· out '+esc(sf.checkOut):''}</div>
       <div class="kv"><b>Rooms:</b></div>${rooms}
+      <div class="kv"><b>Rules:</b> ${esc(l.rules||'—')}</div>
       <div class="kv"><b>Description:</b> ${esc(l.description||'—')}</div>
       <div class="kv"><b>Map:</b> ${l.lat?`${l.lat}, ${l.lng}`:'—'} ${l.mapLink?`· <a href="${esc(l.mapLink)}" target="_blank">link</a>`:''}</div>
       <div class="kv"><b>Photos:</b><br>${photos}</div>
-      <div class="kv"><b>Created:</b> ${dt(l.createdAt)} · <b>Verified:</b> ${dt(l.verifiedAt)} (${ago(l.verifiedAt)})</div>
-      <div class="acts">
-        <button class="approve" onclick="act(${l.id},'approve')">✓ Approve / publish</button>
-        <button class="reject" onclick="act(${l.id},'reject')">Reject</button>
-        <button class="neutral" onclick="openEdit(${l.id})">✎ Edit</button>
+      <div class="kv"><b>Created:</b> ${dt(l.createdAt)} · <b>Verified:</b> ${dt(l.verifiedAt)}</div>
+      <div class="acts">${actions}
+        <button class="neutral" onclick="openEdit(${l.id})">✎ Edit all details</button>
         <button class="reject" onclick="deleteOne(${l.id})">🗑 Delete</button>
       </div>
       <div id="e-${l.id}"></div>`;
   }
-  function openEdit(id){
-    const l = _all.find(x=>x.id===id);
-    $('e-'+id).innerHTML = `
-      <div style="border-top:1px dashed var(--line);margin-top:10px;padding-top:10px">
-      <div class="editgrid">
-        <div class="f"><label>Name</label><input id="ed-name-${id}" value="${esc(l.name)}"></div>
-        <div class="f"><label>City</label><input id="ed-city-${id}" value="${esc(l.city)}"></div>
-        <div class="f"><label>Area</label><input id="ed-area-${id}" value="${esc(l.area||'')}"></div>
-        <div class="f"><label>Nearest college</label><input id="ed-col-${id}" value="${esc(l.nearCollege||'')}"></div>
-        <div class="f"><label>Starting rent</label><input id="ed-rent-${id}" type="number" value="${esc(l.startingRent)}"></div>
-        <div class="f"><label>Gender</label><input id="ed-gender-${id}" value="${esc(l.gender||'')}"></div>
-        <div class="f"><label>Contact phone</label><input id="ed-phone-${id}" value="${esc(l.contactPhone||'')}"></div>
-        <div class="f"><label>WhatsApp</label><input id="ed-wa-${id}" value="${esc(l.contactWhatsApp||'')}"></div>
-        <div class="f"><label>Maps link</label><input id="ed-map-${id}" value="${esc(l.mapLink||'')}"></div>
-        <div class="f"><label>Food included</label><select id="ed-food-${id}"><option value="true" ${l.foodIncluded?'selected':''}>Yes</option><option value="false" ${!l.foodIncluded?'selected':''}>No</option></select></div>
-      </div>
-      <div class="f" style="margin-top:8px"><label>Description</label><textarea id="ed-desc-${id}" style="width:100%;border:1px solid var(--line);border-radius:8px;padding:8px;font-size:13px;min-height:60px">${esc(l.description||'')}</textarea></div>
-      <button class="approve" style="border:none;padding:9px 16px;border-radius:8px;font-weight:700;cursor:pointer;margin-top:8px" onclick="saveEdit(${id})">Save changes</button>
-      </div>`;
+  async function stageAct(id,action){
+    await fetch(`/api/admin/listings/${id}/${action}?key=`+encodeURIComponent(KEY),{method:'POST'});
+    toast('Updated');await loadAll();
   }
-  async function saveEdit(id){
-    const v = k => $(`ed-${k}-${id}`).value;
-    const patch = {
-      name: v('name'), city: v('city'), area: v('area'), nearCollege: v('col'),
-      startingRent: Number(v('rent')), gender: v('gender'), contactPhone: v('phone'),
-      contactWhatsApp: v('wa'), mapLink: v('map'), foodIncluded: v('food')==='true', description: v('desc'),
-    };
-    const res = await api('/api/admin/listings/'+id+'/update', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(patch) });
-    if (res.error) return toast(res.error);
-    toast('Saved'); await loadAll();
-  }
-  async function act(id, action){
-    await fetch(`/api/admin/listings/${id}/${action}?key=`+encodeURIComponent(KEY), { method:'POST' });
-    toast(action==='approve'?'Published':'Rejected'); await loadAll();
+  async function deleteOne(id){
+    if(!confirm('Delete this listing? Cannot be undone.'))return;
+    await fetch(`/api/admin/listings/${id}/delete?key=`+encodeURIComponent(KEY),{method:'POST'});
+    toast('Deleted');await loadAll();
   }
 
-  // ---- Pending ----
-  async function loadPending(){
-    const list = await api('/api/admin/pending');
-    if (!list.length){ $('content').innerHTML = '<div class="empty">No listings waiting for review. 🎉</div>'; return; }
-    $('content').innerHTML = list.map(l => `
-      <div class="pcard">
-        <h3>${esc(l.name)}</h3>
-        <div class="meta">📍 ${esc(l.area||'—')}, ${esc(l.city)} ${l.nearCollege?'· near '+esc(l.nearCollege):''}</div>
-        <div class="kv"><b>For:</b> ${esc(l.gender)} · <b>From:</b> ${money(l.startingRent)}/mo · <b>Food:</b> ${l.foodIncluded?'Yes':'No'} · <b>Phone:</b> ${esc(l.contactPhone||'—')}</div>
-        ${(l.rooms||[]).length?`<div class="kv"><b>Rooms:</b> ${l.rooms.map(r=>esc(r.type)+' '+money(r.rent)).join(' · ')}</div>`:''}
-        ${l.description?`<div style="font-size:13px;color:var(--muted);margin:6px 0">${esc(l.description)}</div>`:''}
-        <div class="acts"><button class="approve" onclick="actP(${l.id},'approve')">✓ Approve &amp; publish</button><button class="reject" onclick="actP(${l.id},'reject')">Reject</button></div>
+  // ---- Full edit (mirrors owner form) ----
+  let ed={id:null,rooms:[],photos:[],lat:null,lng:null}, edMap=null, edMarker=null;
+  function openEdit(id){
+    const l=_all.find(x=>x.id===id);
+    ed={id, rooms:(l.rooms||[]).map(r=>({...r})), photos:[...(l.photos||[])], lat:(typeof l.lat==='number'?l.lat:null), lng:(typeof l.lng==='number'?l.lng:null)};
+    if(!ed.rooms.length) ed.rooms=[{type:'',rent:'',ac:false,washroom:false,furnished:false}];
+    const sf=l.safety||{};
+    $('e-'+id).innerHTML=`
+      <div style="border-top:1px dashed var(--line);margin-top:10px;padding-top:12px">
+      <div class="editgrid">
+        <div class="f"><label>Name</label><input id="e-name" value="${esc(l.name)}"></div>
+        <div class="f"><label>City</label><select id="e-city">${CITIES.map(c=>`<option ${c===l.city?'selected':''}>${c}</option>`).join('')}</select></div>
+        <div class="f"><label>Area</label><input id="e-area" value="${esc(l.area||'')}"></div>
+        <div class="f"><label>Nearest college</label><input id="e-col" value="${esc(l.nearCollege||'')}"></div>
+        <div class="f"><label>For</label><select id="e-gender">${['Girls','Boys','Co-ed'].map(g=>`<option ${g===l.gender?'selected':''}>${g}</option>`).join('')}</select></div>
+        <div class="f"><label>Available from</label><input id="e-date" type="date" value="${esc(l.availableFrom||'')}"></div>
+        <div class="f"><label>Food included</label><select id="e-food"><option value="true" ${l.foodIncluded?'selected':''}>Yes</option><option value="false" ${!l.foodIncluded?'selected':''}>No</option></select></div>
+        <div class="f"><label>Food detail</label><input id="e-fooddetail" value="${esc(l.foodDetail||'')}"></div>
+        <div class="f"><label>Contact phone</label><input id="e-phone" value="${esc(l.contactPhone||'')}"></div>
+        <div class="f"><label>WhatsApp</label><input id="e-wa" value="${esc(l.contactWhatsApp||'')}"></div>
+      </div>
+      <div class="f" style="margin-top:8px"><label>Description</label><textarea id="e-desc" style="min-height:50px">${esc(l.description||'')}</textarea></div>
+      <div class="f" style="margin-top:8px"><label>House rules</label><textarea id="e-rules" style="min-height:40px">${esc(l.rules||'')}</textarea></div>
+
+      <div style="font-weight:800;color:var(--purple2);margin:14px 0 6px">Room types</div>
+      <div id="ed-rooms"></div>
+      <button class="neutral" style="padding:6px 12px;border-radius:8px;cursor:pointer" onclick="edAddRoom()">+ Add room</button>
+
+      <div style="font-weight:800;color:var(--purple2);margin:14px 0 6px">Amenities</div>
+      <div class="checks" id="ed-amen">${AMEN.map(a=>`<label><input type="checkbox" value="${a}" ${(l.amenities||[]).includes(a)?'checked':''}> ${a}</label>`).join('')}</div>
+
+      <div style="font-weight:800;color:var(--purple2);margin:14px 0 6px">Safety</div>
+      <div class="checks">
+        <label><input type="checkbox" id="e-guard" ${sf.guard?'checked':''}> Security guard</label>
+        <label><input type="checkbox" id="e-warden" ${sf.warden?'checked':''}> Warden</label>
+        <label><input type="checkbox" id="e-bio" ${sf.biometric?'checked':''}> Biometric entry</label>
+        <label><input type="checkbox" id="e-visit" ${sf.visitorRegister?'checked':''}> Visitor register</label>
+      </div>
+      <div class="editgrid">
+        <div class="f"><label>Check-in</label><input id="e-checkin" value="${esc(sf.checkIn||'')}"></div>
+        <div class="f"><label>Check-out/curfew</label><input id="e-checkout" value="${esc(sf.checkOut||'')}"></div>
+      </div>
+
+      <div style="font-weight:800;color:var(--purple2);margin:14px 0 6px">Photos</div>
+      <input type="file" accept="image/*" multiple onchange="edUpload(this.files)">
+      <div id="ed-photos" style="margin-top:8px"></div>
+
+      <div style="font-weight:800;color:var(--purple2);margin:14px 0 6px">Location</div>
+      <div style="display:flex;gap:8px;margin-bottom:8px">
+        <input id="ed-search" placeholder="Search address/area" style="flex:1;border:1px solid var(--line);border-radius:8px;padding:8px;font-size:13px" onkeydown="if(event.key==='Enter'){event.preventDefault();edSearch();}">
+        <button class="neutral" style="padding:8px 14px;border-radius:8px;cursor:pointer" onclick="edSearch()">Search</button>
+      </div>
+      <div id="edmap" style="height:200px;border-radius:8px;border:1px solid var(--line)"></div>
+      <div id="ed-pin" class="kv" style="margin-top:4px">${ed.lat?'Pin: '+ed.lat+', '+ed.lng:'No pin set'}</div>
+      <div class="f" style="margin-top:8px"><label>Google Maps link</label><input id="e-map" value="${esc(l.mapLink||'')}"></div>
+
+      <button class="approve" style="padding:10px 18px;border-radius:8px;cursor:pointer;margin-top:14px" onclick="saveEdit(${id})">Save all changes</button>
+      </div>`;
+    edRenderRooms(); edRenderPhotos(); edInitMap();
+  }
+  function edAddRoom(){ed.rooms.push({type:'',rent:'',ac:false,washroom:false,furnished:false});edRenderRooms();}
+  function edRmRoom(i){ed.rooms.splice(i,1);if(!ed.rooms.length)edAddRoom();else edRenderRooms();}
+  function edUpdRoom(i,k,v){ed.rooms[i][k]=v;}
+  function edRenderRooms(){
+    $('ed-rooms').innerHTML=ed.rooms.map((r,i)=>`
+      <div class="roomedit">
+        <div class="editgrid">
+          <div class="f"><label>Type</label><input value="${esc(r.type)}" oninput="edUpdRoom(${i},'type',this.value)" placeholder="Single AC"></div>
+          <div class="f"><label>Rent</label><input type="number" value="${esc(r.rent)}" oninput="edUpdRoom(${i},'rent',this.value)"></div>
+        </div>
+        <div class="checks" style="margin-top:6px">
+          <label><input type="checkbox" ${r.ac?'checked':''} onchange="edUpdRoom(${i},'ac',this.checked)"> AC</label>
+          <label><input type="checkbox" ${r.washroom?'checked':''} onchange="edUpdRoom(${i},'washroom',this.checked)"> Attached washroom</label>
+          <label><input type="checkbox" ${r.furnished?'checked':''} onchange="edUpdRoom(${i},'furnished',this.checked)"> Furnished</label>
+        </div>
+        ${ed.rooms.length>1?`<button class="reject" style="padding:5px 10px;border-radius:6px;cursor:pointer;font-size:12px" onclick="edRmRoom(${i})">Remove</button>`:''}
       </div>`).join('');
   }
-  async function actP(id, action){ await fetch(`/api/admin/listings/${id}/${action}?key=`+encodeURIComponent(KEY),{method:'POST'}); toast(action==='approve'?'Published':'Rejected'); loadPending(); }
+  function edRenderPhotos(){
+    $('ed-photos').innerHTML=ed.photos.map((p,i)=>`<span class="pp"><img class="thumb" src="${p}"><button onclick="ed.photos.splice(${i},1);edRenderPhotos()">✕</button></span>`).join('')||'<span class="kv">No photos</span>';
+  }
+  function fileToB64(f){return new Promise((res,rej)=>{const r=new FileReader();r.onload=()=>res(String(r.result).split(',')[1]);r.onerror=rej;r.readAsDataURL(f);});}
+  async function edUpload(files){
+    for(const file of files){
+      if(!file.type.startsWith('image/'))continue;
+      if(file.size>5*1024*1024){toast(file.name+' over 5MB');continue;}
+      try{
+        const dataBase64=await fileToB64(file);
+        const res=await fetch('/api/upload',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({filename:file.name,contentType:file.type,dataBase64})});
+        const d=await res.json();
+        if(d.url){ed.photos.push(d.url);edRenderPhotos();}
+      }catch{toast('Upload failed');}
+    }
+  }
+  function edInitMap(){
+    const c=ed.lat!=null?[ed.lat,ed.lng]:(CITY_COORDS[$('e-city').value]||CITY_COORDS.Nagpur);
+    setTimeout(()=>{
+      if(edMap){edMap.remove();edMap=null;edMarker=null;}
+      edMap=L.map('edmap').setView(c,ed.lat!=null?15:12);
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'© OpenStreetMap'}).addTo(edMap);
+      edMap.on('click',e=>edSetPin(e.latlng.lat,e.latlng.lng));
+      if(ed.lat!=null)edSetPin(ed.lat,ed.lng);
+      edMap.invalidateSize();
+    },120);
+  }
+  function edSetPin(lat,lng){
+    ed.lat=Math.round(lat*1e6)/1e6;ed.lng=Math.round(lng*1e6)/1e6;
+    if(edMarker)edMap.removeLayer(edMarker);
+    edMarker=L.marker([lat,lng]).addTo(edMap);
+    $('ed-pin').textContent='Pin: '+ed.lat+', '+ed.lng;
+  }
+  async function edSearch(){
+    const q=$('ed-search').value.trim();if(!q)return;
+    try{const r=await fetch('https://nominatim.openstreetmap.org/search?format=json&limit=1&q='+encodeURIComponent(q));const d=await r.json();if(d.length){edMap.setView([+d[0].lat,+d[0].lon],16);edSetPin(+d[0].lat,+d[0].lon);}else toast('No match');}catch{toast('Search failed');}
+  }
+  async function saveEdit(id){
+    const rooms=ed.rooms.filter(r=>r.type&&String(r.type).trim()&&Number(r.rent)>0).map(r=>({type:String(r.type).trim(),rent:Number(r.rent),ac:!!r.ac,washroom:!!r.washroom,furnished:!!r.furnished}));
+    const amenities=[...document.querySelectorAll('#ed-amen input:checked')].map(c=>c.value);
+    const patch={
+      name:$('e-name').value,city:$('e-city').value,area:$('e-area').value,nearCollege:$('e-col').value,
+      gender:$('e-gender').value,availableFrom:$('e-date').value,foodIncluded:$('e-food').value==='true',foodDetail:$('e-fooddetail').value,
+      contactPhone:$('e-phone').value,contactWhatsApp:$('e-wa').value,description:$('e-desc').value,rules:$('e-rules').value,
+      amenities,rooms,photos:ed.photos,mapLink:$('e-map').value,
+      safety:{guard:$('e-guard').checked,warden:$('e-warden').checked,biometric:$('e-bio').checked,visitorRegister:$('e-visit').checked,checkIn:$('e-checkin').value,checkOut:$('e-checkout').value},
+      hasAC:rooms.some(r=>r.ac)||amenities.includes('AC'),
+    };
+    if(rooms.length)patch.startingRent=Math.min(...rooms.map(r=>r.rent));
+    if(ed.lat!=null){patch.lat=ed.lat;patch.lng=ed.lng;}
+    const res=await api('/api/admin/listings/'+id+'/update',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(patch)});
+    if(res.error)return toast(res.error);
+    toast('Saved');await loadAll();
+  }
 
   // ---- Enquiries ----
   async function loadEnq(){
-    const list = await api('/api/admin/enquiries');
-    if (!list.length){ $('content').innerHTML='<div class="empty">No enquiries yet.</div>'; return; }
-    $('content').innerHTML = list.slice().reverse().map(e=>`
-      <div class="pcard"><h3>${esc(e.name)} <span style="font-weight:500;color:var(--muted);font-size:13px">→ ${esc(e.listingName||('#'+e.listingId))}</span></h3>
-      <div class="meta">📞 ${esc(e.phone)} · ${dt(e.createdAt)}</div>${e.message?`<div style="font-size:13px">${esc(e.message)}</div>`:''}</div>`).join('');
+    const list=await api('/api/admin/enquiries');
+    if(!list.length){$('content').innerHTML='<div class="empty">No enquiries yet.</div>';return;}
+    $('content').innerHTML=list.slice().reverse().map(e=>`<div class="pcard"><h3>${esc(e.name)} <span style="font-weight:500;color:var(--muted);font-size:13px">→ ${esc(e.listingName||('#'+e.listingId))}</span></h3><div class="meta">📞 ${esc(e.phone)} · ${dt(e.createdAt)}</div>${e.message?`<div style="font-size:13px">${esc(e.message)}</div>`:''}</div>`).join('');
   }
 
-  // ---- Users (password reset) ----
+  // ---- Users ----
   async function loadUsers(){
-    const list = await api('/api/admin/users');
-    if(!Array.isArray(list)){ $('content').innerHTML='<div class="empty">Could not load users.</div>'; return; }
-    $('content').innerHTML = `<div class="meta" style="margin-bottom:10px">${list.length} user(s). You can reset anyone's password here.</div>` +
-      list.slice().reverse().map(u=>`
-      <div class="pcard">
-        <h3>${esc(u.name)} <span class="st ${u.role==='owner'?'approved':'pending'}">${esc(u.role)}</span></h3>
-        <div class="meta">${esc(u.email)} · 📱 ${esc(u.phone||'—')}</div>
-        <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:8px">
-          <input id="pw-${u.id}" type="text" placeholder="New password (min 6)" style="border:1px solid var(--line);border-radius:8px;padding:8px;font-size:13px">
-          <button class="neutral" style="padding:8px 14px;border-radius:8px;cursor:pointer" onclick="resetPw(${u.id})">Reset password</button>
-        </div>
-      </div>`).join('');
+    const list=await api('/api/admin/users');
+    if(!Array.isArray(list)){$('content').innerHTML='<div class="empty">Could not load users.</div>';return;}
+    $('content').innerHTML=`<div class="meta" style="margin-bottom:10px">${list.length} user(s).</div>`+list.slice().reverse().map(u=>`
+      <div class="pcard"><h3>${esc(u.name)} <span class="st ${u.role==='owner'?'approved':'pending'}">${esc(u.role)}</span></h3>
+      <div class="meta">${esc(u.email)} · 📱 ${esc(u.phone||'—')}</div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px">
+        <input id="pw-${u.id}" type="text" placeholder="New password (min 6)" style="border:1px solid var(--line);border-radius:8px;padding:8px;font-size:13px">
+        <button class="neutral" style="padding:8px 14px;border-radius:8px;cursor:pointer" onclick="resetPw(${u.id})">Reset password</button>
+      </div></div>`).join('');
   }
   async function resetPw(id){
-    const pw = $('pw-'+id).value;
-    if(pw.length<6) return toast('Password must be at least 6 characters');
-    const res = await api('/api/admin/users/'+id+'/password', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({password:pw}) });
-    if(res.error) return toast(res.error);
-    toast('Password reset'); $('pw-'+id).value='';
+    const pw=$('pw-'+id).value;if(pw.length<6)return toast('Min 6 characters');
+    const res=await api('/api/admin/users/'+id+'/password',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({password:pw})});
+    if(res.error)return toast(res.error);toast('Password reset');$('pw-'+id).value='';
   }
 
   // ---- Import CSV ----
-  let _parsed = [];
+  let _parsed=[];
   function loadImport(){
-    $('content').innerHTML = `
+    $('content').innerHTML=`
       <div class="pcard imp">
         <h3>Bulk import listings from CSV</h3>
-        <div class="meta">Columns (first row = headers): <code>name, city, area, nearCollege, gender, startingRent, contactPhone, contactWhatsApp, foodIncluded, amenities, description, lat, lng</code>. <b>amenities</b> separated by semicolons. <b>foodIncluded</b> = true/false.</div>
-        <a href="/listing-template.csv" download style="display:inline-block;margin-bottom:12px;color:var(--purple2);font-weight:700;text-decoration:none">⬇ Download CSV template (with example rows)</a><br>
+        <div class="meta">Use the template (download below). Imported rows go in as your chosen stage. Duplicate name+city rows are skipped automatically.</div>
+        <a href="/listing-template.csv" download style="display:inline-block;margin-bottom:12px;color:var(--purple2);font-weight:700;text-decoration:none">⬇ Download CSV template</a><br>
         <input type="file" accept=".csv,text/csv" onchange="onCsv(this.files[0])">
         <div id="imp-preview" style="margin-top:12px"></div>
       </div>`;
   }
-  function onCsv(file){
-    if(!file) return;
-    const reader = new FileReader();
-    reader.onload = () => { _parsed = parseCSV(String(reader.result)); renderPreview(); };
-    reader.readAsText(file);
-  }
+  function onCsv(file){if(!file)return;const r=new FileReader();r.onload=()=>{_parsed=parseCSV(String(r.result));renderPreview();};r.readAsText(file);}
   function parseCSV(text){
-    const rows = []; let i=0, field='', row=[], inQ=false;
-    while(i<text.length){
-      const c=text[i];
-      if(inQ){ if(c==='"'){ if(text[i+1]==='"'){field+='"';i++;} else inQ=false; } else field+=c; }
-      else { if(c==='"') inQ=true; else if(c===','){ row.push(field); field=''; } else if(c==='\n'||c==='\r'){ if(field!==''||row.length){ row.push(field); rows.push(row); row=[]; field=''; } if(c==='\r'&&text[i+1]==='\n') i++; } else field+=c; }
-      i++;
-    }
-    if(field!==''||row.length){ row.push(field); rows.push(row); }
-    if(!rows.length) return [];
-    const headers = rows[0].map(h=>h.trim());
-    const bool = v => String(v).trim().toLowerCase()==='true';
+    const rows=[];let i=0,field='',row=[],inQ=false;
+    while(i<text.length){const c=text[i];
+      if(inQ){if(c==='"'){if(text[i+1]==='"'){field+='"';i++;}else inQ=false;}else field+=c;}
+      else{if(c==='"')inQ=true;else if(c===','){row.push(field);field='';}else if(c==='\n'||c==='\r'){if(field!==''||row.length){row.push(field);rows.push(row);row=[];field='';}if(c==='\r'&&text[i+1]==='\n')i++;}else field+=c;}
+      i++;}
+    if(field!==''||row.length){row.push(field);rows.push(row);}
+    if(!rows.length)return [];
+    const H=rows[0].map(h=>h.trim());const bool=v=>String(v).trim().toLowerCase()==='true';
     return rows.slice(1).filter(r=>r.some(c=>c.trim())).map(r=>{
-      const o={}; headers.forEach((h,idx)=> o[h]=(r[idx]||'').trim());
-      // Up to 3 room types (room1Type/room1Rent/room1AC/...)
-      const rooms=[];
-      [1,2,3].forEach(n=>{
-        const t=o['room'+n+'Type'], rt=Number(o['room'+n+'Rent']);
-        if(t && rt>0) rooms.push({ type:t, rent:rt, ac:bool(o['room'+n+'AC']), washroom:bool(o['room'+n+'Washroom']), furnished:bool(o['room'+n+'Furnished']) });
-      });
-      let rent = Number(o.startingRent)||0;
-      if(!rent && rooms.length) rent = Math.min(...rooms.map(x=>x.rent));
-      if(!rooms.length && rent) rooms.push({type:'Standard room',rent});
-      const safety = {
-        guard:bool(o.securityGuard), warden:bool(o.warden), biometric:bool(o.biometric),
-        visitorRegister:bool(o.visitorRegister), checkIn:o.checkIn||'', checkOut:o.checkOut||'',
-      };
-      return {
-        name:o.name, city:o.city, area:o.area, nearCollege:o.nearCollege, gender:o.gender||'Co-ed',
-        startingRent:rent, contactPhone:o.contactPhone, contactWhatsApp:o.contactWhatsApp,
-        foodIncluded:bool(o.foodIncluded), foodDetail:o.foodDetail||'',
-        amenities:(o.amenities||'').split(';').map(a=>a.trim()).filter(Boolean),
-        availableFrom:o.availableFrom||'', description:o.description||'', rules:o.rules||'',
-        mapLink:o.mapLink||'', lat:o.lat?Number(o.lat):undefined, lng:o.lng?Number(o.lng):undefined,
-        safety, rooms,
-        photos:(o.photos||'').split(';').map(p=>p.trim()).filter(Boolean),
-        hasAC: rooms.some(x=>x.ac),
-      };
+      const o={};H.forEach((h,idx)=>o[h]=(r[idx]||'').trim());
+      const rooms=[];[1,2,3].forEach(n=>{const t=o['room'+n+'Type'],rt=Number(o['room'+n+'Rent']);if(t&&rt>0)rooms.push({type:t,rent:rt,ac:bool(o['room'+n+'AC']),washroom:bool(o['room'+n+'Washroom']),furnished:bool(o['room'+n+'Furnished'])});});
+      let rent=Number(o.startingRent)||0;if(!rent&&rooms.length)rent=Math.min(...rooms.map(x=>x.rent));if(!rooms.length&&rent)rooms.push({type:'Standard room',rent});
+      return {name:o.name,city:o.city,area:o.area,nearCollege:o.nearCollege,gender:o.gender||'Co-ed',startingRent:rent,
+        contactPhone:o.contactPhone,contactWhatsApp:o.contactWhatsApp,foodIncluded:bool(o.foodIncluded),foodDetail:o.foodDetail||'',
+        amenities:(o.amenities||'').split(';').map(a=>a.trim()).filter(Boolean),availableFrom:o.availableFrom||'',description:o.description||'',rules:o.rules||'',
+        mapLink:o.mapLink||'',lat:o.lat?Number(o.lat):undefined,lng:o.lng?Number(o.lng):undefined,
+        safety:{guard:bool(o.securityGuard),warden:bool(o.warden),biometric:bool(o.biometric),visitorRegister:bool(o.visitorRegister),checkIn:o.checkIn||'',checkOut:o.checkOut||''},
+        rooms,photos:(o.photos||'').split(';').map(p=>p.trim()).filter(Boolean),hasAC:rooms.some(x=>x.ac)};
     });
   }
   function renderPreview(){
-    const ok = _parsed.filter(r=>r.name&&r.city);
-    $('imp-preview').innerHTML = `
-      <div class="kv"><b>${_parsed.length}</b> rows parsed, <b>${ok.length}</b> valid (need name + city).</div>
-      ${ok.slice(0,5).map(r=>`<div class="kv">• ${esc(r.name)} — ${esc(r.city)} · ${money(r.startingRent)}</div>`).join('')}
-      ${ok.length>5?`<div class="kv">…and ${ok.length-5} more</div>`:''}
-      <div class="acts">
-        <button class="neutral" onclick="doImport(false)">Import as pending (review later)</button>
-        <button class="approve" onclick="doImport(true)">Import &amp; publish now</button>
-      </div>`;
+    const ok=_parsed.filter(r=>r.name&&r.city);
+    $('imp-preview').innerHTML=`
+      <div class="kv"><b>${_parsed.length}</b> rows, <b>${ok.length}</b> valid (need name + city).</div>
+      ${ok.slice(0,5).map(r=>`<div class="kv">• ${esc(r.name)} — ${esc(r.city)} · ${money(r.startingRent)}</div>`).join('')}${ok.length>5?`<div class="kv">…and ${ok.length-5} more</div>`:''}
+      <div style="margin:10px 0"><b style="font-size:13px">Import as:</b>
+        <label style="font-size:13px;margin-left:8px"><input type="radio" name="stage" value="draft" checked> Raw (not live)</label>
+        <label style="font-size:13px;margin-left:8px"><input type="radio" name="stage" value="unverified"> Live · Unverified</label>
+        <label style="font-size:13px;margin-left:8px"><input type="radio" name="stage" value="verified"> Verified</label>
+      </div>
+      <button class="approve" style="padding:10px 18px;border-radius:8px;cursor:pointer" onclick="doImport()">Import</button>`;
   }
-  let _importing = false;
-  async function doImport(publish){
-    if(!_parsed.length) return toast('Nothing to import');
-    if(_importing) return; _importing = true;
+  let _importing=false;
+  async function doImport(){
+    if(!_parsed.length)return toast('Nothing to import');
+    if(_importing)return;_importing=true;
     document.querySelectorAll('#imp-preview button').forEach(b=>b.disabled=true);
+    const stage=(document.querySelector('input[name=stage]:checked')||{}).value||'draft';
     try{
-      const res = await api('/api/admin/import', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({rows:_parsed, publish}) });
-      if(res.error){ toast(res.error); return; }
-      toast(`Imported ${res.created}${res.duplicates?', '+res.duplicates+' duplicate(s) skipped':''}${res.skipped?', '+res.skipped+' invalid':''}`);
-      _parsed=[]; $('imp-preview').innerHTML='';
-    } finally { _importing = false; }
+      const res=await api('/api/admin/import',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({rows:_parsed,stage})});
+      if(res.error){toast(res.error);return;}
+      toast(`Imported ${res.created}${res.duplicates?', '+res.duplicates+' dup skipped':''}${res.skipped?', '+res.skipped+' invalid':''}`);
+      _parsed=[];$('imp-preview').innerHTML='';
+    }finally{_importing=false;}
   }
 </script>
 </body>

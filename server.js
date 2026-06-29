@@ -344,7 +344,9 @@ const server = createServer(async (req, res) => {
         if (!authed) return send(res, 401, { error: 'Unauthorized' });
         const all = await getAllListings();
         const by = s => all.filter(l => (l.status || 'pending') === s);
-        const approved = by('approved'), pending = by('pending'), rejected = by('rejected');
+        const approved = by('approved'), pending = by('pending'), rejected = by('rejected'), draft = by('draft');
+        const verifiedLive = approved.filter(l => l.verified);
+        const unverifiedLive = approved.filter(l => !l.verified);
         const verifiedDates = approved.map(l => l.verifiedAt).filter(Boolean).sort();
         const lastVerifiedAt = verifiedDates.length ? verifiedDates[verifiedDates.length - 1] : null;
         const oldestVerifiedAt = verifiedDates.length ? verifiedDates[0] : null;
@@ -359,6 +361,7 @@ const server = createServer(async (req, res) => {
         const duplicates = Object.values(groups).filter(g => g.length > 1);
         return send(res, 200, {
           total: all.length, approved: approved.length, pending: pending.length, rejected: rejected.length,
+          raw: draft.length, verified: verifiedLive.length, unverified: unverifiedLive.length,
           available: approved.filter(l => l.available !== false).length,
           full: approved.filter(l => l.available === false).length,
           lastVerifiedAt, oldestVerifiedAt, byCity,
@@ -387,6 +390,7 @@ const server = createServer(async (req, res) => {
         const rows = Array.isArray(b.rows) ? b.rows : [];
         const existing = await getAllListings();
         const seen = new Set(existing.map(l => `${(l.name || '').toLowerCase().trim()}|${(l.city || '').toLowerCase().trim()}`));
+        const stage = b.stage || 'draft'; // raw drafts by default
         let created = 0, skipped = 0, duplicates = 0;
         for (const r of rows) {
           if (!r.name || !r.city) { skipped++; continue; }
@@ -394,7 +398,9 @@ const server = createServer(async (req, res) => {
           if (seen.has(key)) { duplicates++; continue; } // skip duplicates (prevents re-import multiplying rows)
           seen.add(key);
           const listing = await addListing(r);
-          if (b.publish) await setStatus(listing.id, 'approved');
+          if (stage === 'verified') await updateListing(listing.id, { status: 'approved', verified: true, verifiedAt: new Date().toISOString() });
+          else if (stage === 'unverified') await updateListing(listing.id, { status: 'approved', verified: false });
+          else await updateListing(listing.id, { status: 'draft' }); // raw, not public
           created++;
         }
         return send(res, 200, { created, skipped, duplicates });
@@ -433,10 +439,17 @@ const server = createServer(async (req, res) => {
         if (!authed) return send(res, 401, { error: 'Unauthorized' });
         return send(res, 200, await getEnquiries());
       }
-      const am = path.match(/^\/api\/admin\/listings\/(\d+)\/(approve|reject)$/);
+      const am = path.match(/^\/api\/admin\/listings\/(\d+)\/(approve|verify|publish|unverify|draft|reject)$/);
       if (am && req.method === 'POST') {
         if (!authed) return send(res, 401, { error: 'Unauthorized' });
-        const updated = await setStatus(am[1], am[2] === 'approve' ? 'approved' : 'rejected');
+        const a = am[2];
+        let patch;
+        if (a === 'reject') patch = { status: 'rejected' };
+        else if (a === 'draft') patch = { status: 'draft' };                       // pull back to raw
+        else if (a === 'publish') patch = { status: 'approved', verified: false };  // live, unverified
+        else if (a === 'unverify') patch = { verified: false };                     // stays live, drop badge
+        else patch = { status: 'approved', verified: true, verifiedAt: new Date().toISOString() }; // verify/approve
+        const updated = await updateListing(am[1], patch);
         return updated ? send(res, 200, updated) : send(res, 404, { error: 'Not found' });
       }
 
