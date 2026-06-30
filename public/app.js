@@ -62,6 +62,7 @@ function doSearch() {
   state.filters = { city: $('s-city').value, gender: $('s-gender').value, college: $('s-college').value.trim() };
   state.chips.clear();
   document.querySelectorAll('#r-chips .chip').forEach(c => c.classList.remove('on'));
+  if ($('price-range')) { $('price-range').value = 20000; onPriceInput(); }
   route('results');
   loadResults();
 }
@@ -75,36 +76,88 @@ document.querySelectorAll('#r-chips .chip').forEach(chip => {
   });
 });
 
+function onPriceInput() {
+  const v = Number($('price-range').value);
+  $('price-label').textContent = v >= 20000 ? 'Any' : '₹' + v.toLocaleString('en-IN');
+}
+
+let _resultsMap = null;
 async function loadResults() {
   const f = { ...state.filters, sort: $('r-sort').value };
   state.chips.forEach(c => f[c] = 'true');
+  const pr = Number($('price-range') ? $('price-range').value : 20000);
+  if (pr < 20000) f.maxRent = pr;
   const params = new URLSearchParams(Object.entries(f).filter(([, v]) => v && v !== 'Any')).toString();
   const list = await api('/api/listings?' + params);
+  state.lastResults = list;
 
   $('results-title').textContent =
     `${list.length} hostel${list.length !== 1 ? 's' : ''} & PG${list.length !== 1 ? 's' : ''} in ${state.filters.city || 'all cities'}`;
 
   if (!list.length) {
     $('results-cards').innerHTML = `<div class="empty">No matches yet. Try removing some filters,<br>or be the first to <a style="color:var(--purple2);font-weight:700" onclick="route('list')">list a property here</a>.</div>`;
-    return;
+  } else {
+    $('results-cards').innerHTML = list.map(cardHTML).join('');
   }
-  $('results-cards').innerHTML = list.map(cardHTML).join('');
+  if ($('results-map').style.display === 'block') renderResultsMap();
+}
+
+function toggleResultsMap() {
+  const m = $('results-map');
+  const show = m.style.display !== 'block';
+  m.style.display = show ? 'block' : 'none';
+  $('map-toggle').classList.toggle('on', show);
+  if (show) renderResultsMap();
+}
+function renderResultsMap() {
+  const list = state.lastResults || [];
+  if (!_resultsMap) {
+    _resultsMap = L.map('results-map').setView(CITY_COORDS[state.filters.city] || CITY_COORDS.Nagpur, 12);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '© OpenStreetMap' }).addTo(_resultsMap);
+  } else {
+    _resultsMap.eachLayer(l => { if (l instanceof L.Marker) _resultsMap.removeLayer(l); });
+  }
+  const pts = [];
+  list.forEach(l => {
+    const c = coordsFor(l); pts.push(c);
+    L.marker(c).addTo(_resultsMap).bindPopup(`<b>${l.name}</b><br>${money(l.startingRent)}/mo<br><a href="#" onclick="closeResMapAndOpen(${l.id});return false;">View →</a>`);
+  });
+  setTimeout(() => { _resultsMap.invalidateSize(); if (pts.length) _resultsMap.fitBounds(pts, { padding: [40, 40], maxZoom: 14 }); }, 100);
+}
+function closeResMapAndOpen(id) { if (_resultsMap) _resultsMap.closePopup(); openDetail(id); }
+
+function roomSharing(l) {
+  if (!l.rooms || !l.rooms.length) return '';
+  const kinds = new Set();
+  l.rooms.forEach(r => {
+    const t = (r.type || '').toLowerCase();
+    if (/single/.test(t)) kinds.add('Single');
+    if (/double|twin/.test(t)) kinds.add('Double');
+    if (/triple/.test(t)) kinds.add('Triple');
+    if (/four|quad|4 ?shar/.test(t)) kinds.add('4-sharing');
+  });
+  return [...kinds].join(' · ');
 }
 
 function cardHTML(l) {
-  const badge = l.verified
-    ? '<span class="badge v">✓ Verified</span>'
-    : `<span class="badge">${l.gender}</span>`;
-  const tags = [l.gender, l.foodIncluded ? 'Food' : 'No food', l.hasAC ? 'AC' : 'Non-AC']
-    .map(t => `<span class="tag">${t}</span>`).join('');
   const photo = l.photos && l.photos[0];
   const imgStyle = photo ? ` has-photo" style="background-image:url('${photo}')` : '';
+  const isNew = l.createdAt && (Date.now() - new Date(l.createdAt)) < 14 * 864e5;
+  const badges = [l.verified ? '<span class="badge v">✓ Verified</span>' : `<span class="badge">${l.gender}</span>`];
+  if (isNew) badges.push('<span class="badge new">New</span>');
+  const sharing = roomSharing(l);
+  const tags = [
+    l.foodIncluded ? '🍽 Food' : null,
+    l.hasAC ? '❄ AC' : null,
+    l.startingRent && l.startingRent <= 5000 ? '💰 Budget' : null,
+  ].filter(Boolean).map(t => `<span class="tag">${t}</span>`).join('');
   return `<div class="card" onclick="openDetail(${l.id})">
-    <div class="cimg${imgStyle}">${photo ? '' : '🏠'}${badge}</div>
+    <div class="cimg${imgStyle}">${photo ? '' : '🏠'}<div class="badgewrap">${badges.join('')}</div></div>
     <div class="cbody">
       <div class="cname">${l.name}</div>
-      <div class="cmeta">📍 ${l.distance || (l.area + ', ' + l.city)}</div>
+      <div class="cmeta">📍 <b>${l.distance || (l.area + ', ' + l.city)}</b></div>
       <div class="stars">${starStr(l.rating)} <span style="color:var(--muted)">${l.rating || '—'} ${l.reviews ? '(' + l.reviews + ')' : ''}</span></div>
+      ${sharing ? `<div class="sharing">${sharing}</div>` : ''}
       <div class="tagrow">${tags}</div>
       <div class="price">${money(l.startingRent)} <small>/mo onwards</small></div>
     </div></div>`;
@@ -132,11 +185,15 @@ function renderDetail() {
   }).join('');
   const amen = (l.amenities || []).map(a => `<span>${a}</span>`).join('');
   const sr = state.selectedRoom || { type: '', rent: l.startingRent };
+  const inc = [l.foodIncluded ? 'Mess food' : null,
+    ...(l.amenities || []).filter(a => ['WiFi', 'Laundry', 'Power backup', 'Water purifier', 'Housekeeping'].includes(a))].filter(Boolean);
+  const includesHTML = inc.length
+    ? `<div style="font-size:12px;color:#333;margin:0 0 10px;line-height:1.7"><b style="color:var(--purple)">Includes:</b> ${inc.map(x => '✓ ' + x).join('&nbsp;&nbsp;')}</div>` : '';
 
   const photos = l.photos || [];
   const main = photos[state.detailPhoto] || photos[0];
   const galleryHTML = main
-    ? `<div class="gallery has-photo" style="background-image:url('${main}')"></div>` +
+    ? `<div class="gallery has-photo" style="background-image:url('${main}');cursor:zoom-in" onclick="openLightbox()"><span class="zoomhint">🔍 ${photos.length} photo${photos.length > 1 ? 's' : ''}</span></div>` +
       (photos.length > 1 ? `<div class="thumbs">${photos.map((p, i) =>
         `<img src="${p}" class="${i === state.detailPhoto ? 'on' : ''}" onclick="setDetailPhoto(${i})">`).join('')}</div>` : '')
     : `<div class="gallery">🏠</div>`;
@@ -169,7 +226,9 @@ function renderDetail() {
           <div style="font-weight:800;margin-bottom:12px">Room types <span style="font-size:11px;font-weight:400;color:var(--muted)">(tap to select)</span></div>
           ${rooms || '<div style="color:var(--muted);font-size:13px">Contact owner for room details.</div>'}
           <div style="font-size:13px;color:var(--muted);margin:12px 0">Selected: <b id="sel-label">${sr.type ? sr.type + ' — ' + money(sr.rent) + '/mo' : money(l.startingRent) + '/mo'}</b></div>
+          ${includesHTML}
           <button class="btn" onclick="openContact()">Contact owner</button>
+          <button class="btn alt" onclick="scheduleVisit()">📅 Schedule a visit</button>
           ${l.ownerId && (!state.user || state.user.id !== l.ownerId) ? `<button class="btn alt" onclick="messageOwner(${l.ownerId}, ${l.id})">💬 Message owner</button>` : ''}
           <button class="btn alt" id="save-btn" onclick="toggleSave(${l.id})">${isSaved(l.id) ? '♥ Saved' : '♡ Save'}</button>
           <div class="note">Phone &amp; WhatsApp · online booking coming soon</div>
@@ -259,6 +318,11 @@ function openContact() {
 }
 function closeModal() { $('modal').classList.remove('show'); }
 
+function scheduleVisit() {
+  openContact();
+  $('e-msg').value = `Hi, I'd like to schedule a visit to ${state.currentListing.name}. When would be a good time?`;
+}
+
 async function sendEnquiry() {
   const name = $('e-name').value.trim(), phone = $('e-phone').value.trim();
   if (!name || !phone) return toast('Please add your name and phone');
@@ -329,6 +393,25 @@ function clearOwnerForm() {
 
 // ---------- PHOTO UPLOAD ----------
 function setDetailPhoto(i) { state.detailPhoto = i; renderDetail(); }
+
+function openLightbox() {
+  const photos = (state.currentListing && state.currentListing.photos) || [];
+  if (!photos.length) return;
+  renderLightbox();
+  $('lightbox').classList.add('show');
+}
+function closeLightbox() { $('lightbox').classList.remove('show'); }
+function lightboxNav(dir) {
+  const photos = state.currentListing.photos || [];
+  state.detailPhoto = (state.detailPhoto + dir + photos.length) % photos.length;
+  renderLightbox();
+}
+function renderLightbox() {
+  const photos = state.currentListing.photos || [];
+  $('lb-img').src = photos[state.detailPhoto] || '';
+  $('lb-count').textContent = `${state.detailPhoto + 1} / ${photos.length}`;
+  $('lb-nav').style.display = photos.length > 1 ? 'flex' : 'none';
+}
 
 function fileToBase64(file) {
   return new Promise((resolve, reject) => {
@@ -514,6 +597,32 @@ async function toggleSave(id) {
 }
 
 function goSaved() { route('saved'); loadSaved(); }
+
+async function goCompare() {
+  const res = await fetch('/api/me/shortlist');
+  if (!res.ok) { route('home'); return openAuth('login'); }
+  const list = await res.json();
+  route('compare');
+  renderCompare(list);
+}
+function renderCompare(list) {
+  if (list.length < 2) { $('compare-table').innerHTML = '<div class="empty">Save at least 2 hostels to compare them side by side.</div>'; return; }
+  const rows = [
+    ['', list.map(l => `<div style="font-weight:800">${l.name}</div><div style="font-size:11px;color:var(--muted)">${listingCode(l.id)}</div>`)],
+    ['Photo', list.map(l => (l.photos && l.photos[0]) ? `<div style="width:90px;height:60px;border-radius:8px;background:center/cover url('${l.photos[0]}')"></div>` : '🏠')],
+    ['From', list.map(l => '<b>' + money(l.startingRent) + '</b>/mo')],
+    ['For', list.map(l => l.gender || '—')],
+    ['Food', list.map(l => l.foodIncluded ? '✓ Included' : '—')],
+    ['AC', list.map(l => l.hasAC ? '✓' : '—')],
+    ['Rating', list.map(l => l.rating ? l.rating + '★ (' + (l.reviews || 0) + ')' : '—')],
+    ['Room types', list.map(l => roomSharing(l) || '—')],
+    ['Location', list.map(l => l.distance || (l.area + ', ' + l.city))],
+    ['', list.map(l => `<button class="btn alt" style="width:auto;padding:6px 14px" onclick="openDetail(${l.id})">View</button>`)],
+  ];
+  $('compare-table').innerHTML = '<table class="cmp"><tbody>' +
+    rows.map(([label, cells]) => `<tr><th>${label}</th>${cells.map(c => `<td>${c}</td>`).join('')}</tr>`).join('') +
+    '</tbody></table>';
+}
 
 async function loadSaved() {
   const res = await fetch('/api/me/shortlist');
@@ -794,3 +903,9 @@ async function editListing(id) {
 
 initHome();
 loadAuthState();
+
+// Open a specific listing if arriving from a landing page (/?listing=ID)
+(function () {
+  const lid = new URLSearchParams(location.search).get('listing');
+  if (lid && /^\d+$/.test(lid)) openDetail(Number(lid));
+})();

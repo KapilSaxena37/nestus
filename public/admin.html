@@ -301,10 +301,16 @@
       </div>`).join('');
   }
   function edRenderPhotos(){
-    $('ed-photos').innerHTML=ed.photos.map((p,i)=>`<span class="pp"><img class="thumb" src="${p}"><button onclick="ed.photos.splice(${i},1);edRenderPhotos()">✕</button></span>`).join('')||'<span class="kv">No photos</span>';
+    $('ed-photos').innerHTML=ed.photos.map((p,i)=>`<span class="pp"><img class="thumb" src="${p}"><button onclick="edRemovePhoto(${i})">✕</button></span>`).join('')||'<span class="kv">No photos</span>';
   }
+  // Persist photos to the listing right away (so they stick even without "Save all changes").
+  async function edPersistPhotos(){
+    try{ await api('/api/admin/listings/'+ed.id+'/update',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({photos:ed.photos})}); }catch{}
+  }
+  function edRemovePhoto(i){ ed.photos.splice(i,1); edRenderPhotos(); edPersistPhotos(); }
   function fileToB64(f){return new Promise((res,rej)=>{const r=new FileReader();r.onload=()=>res(String(r.result).split(',')[1]);r.onerror=rej;r.readAsDataURL(f);});}
   async function edUpload(files){
+    let added=0;
     for(const file of files){
       if(!file.type.startsWith('image/'))continue;
       if(file.size>5*1024*1024){toast(file.name+' over 5MB');continue;}
@@ -312,9 +318,11 @@
         const dataBase64=await fileToB64(file);
         const res=await fetch('/api/upload',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({filename:file.name,contentType:file.type,dataBase64})});
         const d=await res.json();
-        if(d.url){ed.photos.push(d.url);edRenderPhotos();}
+        if(d.url){ed.photos.push(d.url);edRenderPhotos();added++;}
+        else toast(d.error||'Upload failed');
       }catch{toast('Upload failed');}
     }
+    if(added){ await edPersistPhotos(); toast(added+' photo(s) uploaded & saved'); }
   }
   function edInitMap(){
     const c=ed.lat!=null?[ed.lat,ed.lng]:(CITY_COORDS[$('e-city').value]||CITY_COORDS.Nagpur);

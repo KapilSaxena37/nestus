@@ -7,6 +7,15 @@
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
 <link rel="stylesheet" href="/styles.css">
+<meta name="description" content="NestUs — find verified student hostels and PGs near your campus in Nagpur, Indore, Pune, Bhopal and Kota. No brokers, real photos, talk to owners directly.">
+<script type="application/ld+json">
+{"@context":"https://schema.org","@type":"FAQPage","mainEntity":[
+{"@type":"Question","name":"How much does a hostel or PG cost?","acceptedAnswer":{"@type":"Answer","text":"Student hostels and PGs typically range from ₹3,500 to ₹15,000 per month depending on the city, sharing type and whether food and AC are included."}},
+{"@type":"Question","name":"Are the listings verified?","acceptedAnswer":{"@type":"Answer","text":"Listings with the Verified badge have been checked by the NestUs team. Others are shown as unverified until confirmed."}},
+{"@type":"Question","name":"Is there any brokerage or fee for students?","acceptedAnswer":{"@type":"Answer","text":"No. NestUs connects students directly with owners — there is no broker and no fee to search or contact listings."}},
+{"@type":"Question","name":"Which cities does NestUs cover?","acceptedAnswer":{"@type":"Answer","text":"NestUs is live in Nagpur, Indore, Pune, Bhopal and Kota, with more cities being added."}}
+]}
+</script>
 </head>
 <body>
   <div class="nav">
@@ -34,8 +43,8 @@
     <!-- HOME -->
     <section id="v-home" class="view show">
       <div class="hero">
-        <h1>Find your home away from home</h1>
-        <p>Verified hostels &amp; PGs for students across India</p>
+        <h1>Verified hostels &amp; PGs near your campus</h1>
+        <p>No brokers · real photos · talk to owners directly</p>
         <div class="searchbar">
           <div><label>City</label><select id="s-city"></select></div>
           <div><label>Gender</label>
@@ -48,6 +57,27 @@
       <div class="stats" id="home-stats"></div>
       <div class="sec">Browse by city</div>
       <div class="cities" id="home-cities"></div>
+
+      <div class="sec">For parents 👪</div>
+      <div class="parents">
+        <p style="margin-bottom:14px;color:#444;line-height:1.6">Your child's safety comes first. Look for the <b style="color:var(--green)">✓ Verified</b> badge — those listings are checked by our team. Safety details like security, entry control, wardens and curfew timings are shown on every listing.</p>
+        <div class="parentgrid">
+          <div>🛡️ Security guard &amp; CCTV</div>
+          <div>🔒 Biometric / gated entry</div>
+          <div>👤 Warden on-site</div>
+          <div>⏰ Curfew &amp; check-in times</div>
+        </div>
+        <a onclick="route('help')" style="display:inline-block;margin-top:14px;color:var(--purple2);font-weight:700;cursor:pointer">Questions about safety? Contact us →</a>
+      </div>
+
+      <div class="sec">Frequently asked questions</div>
+      <div class="faq">
+        <details><summary>How much does a hostel or PG cost?</summary><p>Student hostels and PGs typically range from ₹3,500 to ₹15,000 per month depending on the city, sharing type (single/double/triple) and whether food and AC are included. Each listing shows its room types and prices clearly.</p></details>
+        <details><summary>Are the listings verified?</summary><p>Listings with the ✓ Verified badge have been checked by the NestUs team. Others are shown as unverified until we confirm them. Always look for the badge and photos.</p></details>
+        <details><summary>How do I contact a hostel owner?</summary><p>Open any listing and use "Contact owner" to call or WhatsApp them, or "Message owner" to chat inside NestUs. You can also schedule a visit.</p></details>
+        <details><summary>Is there any brokerage or fee for students?</summary><p>No. NestUs connects you directly with owners — there's no broker and no fee to search or contact listings.</p></details>
+        <details><summary>Which cities does NestUs cover?</summary><p>We're live in Nagpur, Indore, Pune, Bhopal and Kota, and adding more. Pick your city on the home page to browse.</p></details>
+      </div>
     </section>
 
     <!-- RESULTS -->
@@ -69,6 +99,12 @@
         <div class="chip" data-f="ac">AC rooms</div>
         <div class="chip" data-f="verified">Verified only</div>
       </div>
+      <div class="resultctrls">
+        <label style="font-size:13px;color:var(--muted)">Max rent: <b id="price-label">Any</b></label>
+        <input type="range" id="price-range" min="2000" max="20000" step="500" value="20000" oninput="onPriceInput()" onchange="loadResults()">
+        <button class="chip" id="map-toggle" onclick="toggleResultsMap()">🗺 Map</button>
+      </div>
+      <div id="results-map" style="display:none;height:340px;border-radius:14px;overflow:hidden;border:1px solid var(--line);margin-bottom:16px"></div>
       <div class="cards" id="results-cards"></div>
     </section>
 
@@ -88,8 +124,15 @@
     <!-- SAVED -->
     <section id="v-saved" class="view">
       <button class="back" onclick="route('home')">← Home</button>
-      <div class="rhead"><h2>Your saved hostels</h2></div>
+      <div class="rhead"><h2>Your saved hostels</h2><button class="btn" style="width:auto;padding:8px 16px" onclick="goCompare()">⚖ Compare</button></div>
       <div class="cards" id="saved-cards"></div>
+    </section>
+
+    <!-- COMPARE -->
+    <section id="v-compare" class="view">
+      <button class="back" onclick="goSaved()">← Back to saved</button>
+      <div class="rhead"><h2>Compare hostels</h2></div>
+      <div id="compare-table" style="overflow-x:auto"></div>
     </section>
 
     <!-- HELP -->
@@ -276,6 +319,17 @@
         <button class="btn" style="width:auto;padding:11px 18px" onclick="sendMessage()">Send</button>
       </div>
     </div>
+  </div>
+
+  <!-- Photo lightbox -->
+  <div id="lightbox" class="lightbox" onclick="if(event.target===this)closeLightbox()">
+    <button class="lb-close" onclick="closeLightbox()">✕</button>
+    <div id="lb-nav" class="lb-nav">
+      <button onclick="lightboxNav(-1)">‹</button>
+      <button onclick="lightboxNav(1)">›</button>
+    </div>
+    <img id="lb-img" src="" alt="">
+    <div id="lb-count" class="lb-count"></div>
   </div>
 
   <div class="toast" id="toast"></div>

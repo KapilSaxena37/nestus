@@ -15,6 +15,7 @@ import {
   hashPassword, verifyPassword, signSession, verifySession,
   parseCookies, SESSION_MAX_AGE,
 } from './auth.js';
+import { renderLanding, renderSitemap } from './landing.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PUBLIC = join(__dirname, 'public');
@@ -457,6 +458,23 @@ const server = createServer(async (req, res) => {
     } catch (err) {
       return send(res, 500, { error: 'Server error', detail: String(err) });
     }
+  }
+
+  // ---------- SEO landing pages (server-rendered HTML) ----------
+  try {
+    let lm;
+    if ((lm = path.match(/^\/hostels\/([a-z0-9-]+)$/)) && req.method === 'GET')
+      return send(res, 200, await renderLanding('city', lm[1]), 'text/html; charset=utf-8');
+    if ((lm = path.match(/^\/near\/([a-z0-9-]+)$/)) && req.method === 'GET')
+      return send(res, 200, await renderLanding('near', lm[1]), 'text/html; charset=utf-8');
+    if ((lm = path.match(/^\/area\/([a-z0-9-]+)$/)) && req.method === 'GET')
+      return send(res, 200, await renderLanding('area', lm[1]), 'text/html; charset=utf-8');
+    if (path === '/sitemap.xml' && req.method === 'GET')
+      return send(res, 200, await renderSitemap(`https://${req.headers.host}`), 'application/xml; charset=utf-8');
+    if (path === '/robots.txt' && req.method === 'GET')
+      return send(res, 200, `User-agent: *\nAllow: /\nSitemap: https://${req.headers.host}/sitemap.xml\n`, 'text/plain; charset=utf-8');
+  } catch (err) {
+    return send(res, 500, 'Server error', 'text/plain');
   }
 
   // ---------- Static files ----------
