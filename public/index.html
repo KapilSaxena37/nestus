@@ -20,7 +20,11 @@
 <body>
   <div class="nav">
     <div class="brand" onclick="route('home')">Nest<span style="color:#c9c3f7">Us</span></div>
-    <input id="hdr-search" class="hdr-search" placeholder="🔍 Search hostels, area, college…" onkeydown="if(event.key==='Enter')headerSearch()">
+    <form class="hdr-search" id="hdr-search-wrap" onsubmit="headerSearch();return false;">
+      <span class="hsi">🔍</span>
+      <input id="hdr-search" placeholder="Search hostels, area, college…" autocomplete="off">
+      <button type="submit">Search</button>
+    </form>
     <div class="navlinks">
       <a onclick="route('home')">Home</a>
       <a onclick="goMap()">Map</a>

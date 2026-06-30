@@ -12,15 +12,30 @@ function esc(s) {
 function safeUrl(u) { return /^https?:\/\//i.test(String(u || '')) ? String(u) : ''; }
 function listingCode(id) { return 'NES-' + String(id).padStart(5, '0'); }
 
+// Robust geocoder: biases to India + an optional city context, with fallbacks,
+// so multi-word queries like "Vijay Nagar Indore" resolve reliably.
+async function geocode(q, ctx) {
+  const c = (ctx || '').trim();
+  const variants = [];
+  if (c && !q.toLowerCase().includes(c.toLowerCase())) variants.push(`${q}, ${c}, India`);
+  if (!/india/i.test(q)) variants.push(`${q}, India`);
+  variants.push(q);
+  for (const v of variants) {
+    try {
+      const r = await fetch('https://nominatim.openstreetmap.org/search?format=json&limit=1&countrycodes=in&q=' + encodeURIComponent(v));
+      const d = await r.json();
+      if (d && d.length) return { lat: parseFloat(d[0].lat), lng: parseFloat(d[0].lon) };
+    } catch { /* try next variant */ }
+  }
+  return null;
+}
+
 async function searchMapView() {
   const q = $('mapsearch').value.trim();
   if (!q || !_mapView) return;
-  try {
-    const r = await fetch('https://nominatim.openstreetmap.org/search?format=json&limit=1&q=' + encodeURIComponent(q));
-    const d = await r.json();
-    if (d.length) _mapView.setView([parseFloat(d[0].lat), parseFloat(d[0].lon)], 14);
-    else toast('No match found');
-  } catch { toast('Search failed'); }
+  const hit = await geocode(q, state.filters && state.filters.city);
+  if (hit) _mapView.setView([hit.lat, hit.lng], 14);
+  else toast('No match — try adding the city, e.g. "Dharampeth Nagpur"');
 }
 
 const CITIES = ['Nagpur', 'Indore', 'Pune', 'Bhopal', 'Kota'];
@@ -43,6 +58,9 @@ function toast(msg) {
 function route(view) {
   document.querySelectorAll('.view').forEach(v => v.classList.remove('show'));
   $('v-' + view).classList.add('show');
+  // Header search is redundant on the home page (big hero search there) — show only on inner pages.
+  const hs = $('hdr-search-wrap');
+  if (hs) hs.classList.toggle('show', view !== 'home');
   window.scrollTo({ top: 0, behavior: 'smooth' });
 }
 
@@ -50,6 +68,7 @@ function route(view) {
 async function initHome() {
   const cities = await api('/api/cities');
   $('s-city').innerHTML = CITIES.map(c => `<option>${c}</option>`).join('');
+  $('s-city').value = 'Indore'; // default city
 
   const total = Object.values(cities).reduce((a, b) => a + b, 0);
   $('home-stats').innerHTML = `
@@ -71,6 +90,21 @@ function doSearch() {
   state.chips.clear();
   document.querySelectorAll('#r-chips .chip').forEach(c => c.classList.remove('on'));
   if ($('price-range')) { $('price-range').value = 20000; onPriceInput(); }
+  if ($('results-search')) $('results-search').value = '';
+  route('results');
+  loadResults();
+}
+
+// Global header search — usable from any page.
+function headerSearch() {
+  const q = $('hdr-search').value.trim();
+  if (!q) return;
+  const city = CITIES.find(c => c.toLowerCase() === q.toLowerCase());
+  state.filters = city ? { city, gender: 'Any', college: '' } : { city: '', gender: 'Any', college: q };
+  state.chips.clear();
+  document.querySelectorAll('#r-chips .chip').forEach(c => c.classList.remove('on'));
+  if ($('price-range')) { $('price-range').value = 20000; onPriceInput(); }
+  if ($('results-search')) $('results-search').value = '';
   route('results');
   loadResults();
 }
@@ -102,11 +136,30 @@ async function loadResults() {
   $('results-title').textContent =
     `${list.length} hostel${list.length !== 1 ? 's' : ''} & PG${list.length !== 1 ? 's' : ''} in ${state.filters.city || 'all cities'}`;
 
+  renderResultsCards();
+  if ($('results-map').style.display === 'block') renderResultsMap();
+}
+
+function currentResults() {
+  const q = ($('results-search') ? $('results-search').value.trim().toLowerCase() : '');
+  const all = state.lastResults || [];
+  if (!q) return all;
+  return all.filter(l => [l.name, l.area, l.city, l.distance, l.nearCollege]
+    .some(v => String(v || '').toLowerCase().includes(q)));
+}
+function renderResultsCards() {
+  const list = currentResults();
   if (!list.length) {
-    $('results-cards').innerHTML = `<div class="empty">No matches yet. Try removing some filters,<br>or be the first to <a style="color:var(--purple2);font-weight:700" onclick="route('list')">list a property here</a>.</div>`;
+    const hasFilter = $('results-search') && $('results-search').value.trim();
+    $('results-cards').innerHTML = hasFilter
+      ? `<div class="empty">No results match "${esc($('results-search').value.trim())}". Try a different word.</div>`
+      : `<div class="empty">No matches yet. Try removing some filters,<br>or be the first to <a style="color:var(--purple2);font-weight:700" onclick="route('list')">list a property here</a>.</div>`;
   } else {
     $('results-cards').innerHTML = list.map(cardHTML).join('');
   }
+}
+function filterResults() {
+  renderResultsCards();
   if ($('results-map').style.display === 'block') renderResultsMap();
 }
 
@@ -118,7 +171,7 @@ function toggleResultsMap() {
   if (show) renderResultsMap();
 }
 function renderResultsMap() {
-  const list = state.lastResults || [];
+  const list = currentResults();
   if (!_resultsMap) {
     _resultsMap = L.map('results-map').setView(CITY_COORDS[state.filters.city] || CITY_COORDS.Nagpur, 12);
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '© OpenStreetMap' }).addTo(_resultsMap);
@@ -673,14 +726,10 @@ async function searchAddress() {
   const q = $('pickmap-search').value.trim();
   if (!q) return;
   $('pickmap-status').textContent = 'Searching…';
-  try {
-    const r = await fetch('https://nominatim.openstreetmap.org/search?format=json&limit=1&q=' + encodeURIComponent(q));
-    const data = await r.json();
-    if (!data.length) { $('pickmap-status').textContent = 'No match — try a different address, or click the map.'; return; }
-    const lat = parseFloat(data[0].lat), lng = parseFloat(data[0].lon);
-    if (_pickMap) _pickMap.setView([lat, lng], 16);
-    setPin(lat, lng);
-  } catch { $('pickmap-status').textContent = 'Search failed — click the map to set the pin instead.'; }
+  const hit = await geocode(q, $('o-city') ? $('o-city').value : '');
+  if (!hit) { $('pickmap-status').textContent = 'No match — try adding the city, or just click the map to drop the pin.'; return; }
+  if (_pickMap) _pickMap.setView([hit.lat, hit.lng], 16);
+  setPin(hit.lat, hit.lng);
 }
 
 // ---------- MESSAGING ----------
