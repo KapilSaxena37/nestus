@@ -57,10 +57,27 @@ export function normalizePhone(p) {
   return d.length > 10 ? d.slice(-10) : d; // compare last 10 digits (India mobile)
 }
 
+// Strip a trailing distance (e.g. "Allen Career Institute 1.5 km") out of nearCollege
+// so landing pages group by the clean landmark name; move the distance into `distance`.
+export function cleanNearCollege(near, distance) {
+  let nc = String(near || '').trim();
+  let dist = String(distance || '').trim();
+  const m = nc.match(/^(.*?)[\s,\-–—(]+(\d+(?:\.\d+)?)\s*(kms?|m|mtrs?|meters?)\b\)?\s*$/i);
+  if (m && m[1].trim()) {
+    const name = m[1].trim();
+    const unit = m[3].toLowerCase().startsWith('k') ? 'km' : 'm';
+    nc = name;
+    if (!dist) dist = `${m[2]} ${unit} from ${name}`;
+  }
+  return { nearCollege: nc, distance: dist };
+}
+
 function newListing(data) {
+  const c = cleanNearCollege(data.nearCollege, data.distance);
   return {
     status: 'pending', verified: false, rating: 0, reviews: 0,
     createdAt: new Date().toISOString(), ...data,
+    nearCollege: c.nearCollege, distance: c.distance,
   };
 }
 

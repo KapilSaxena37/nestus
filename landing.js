@@ -22,12 +22,16 @@ function cardHTML(l) {
     </div></a>`;
 }
 
-function shell({ title, desc, h1, intro, cardsHTML, crossHTML, count }) {
+function shell({ title, desc, h1, intro, cardsHTML, crossHTML, count, canonical }) {
+  // Pages with fewer than 3 listings are 'thin' — tell Google not to index them
+  // (avoids doorway/thin-content penalties), but still let it follow the links.
+  const robots = count >= 3 ? 'index,follow' : 'noindex,follow';
   return `<!DOCTYPE html><html lang="en"><head>
 <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>${esc(title)}</title>
 <meta name="description" content="${esc(desc)}">
-<link rel="canonical" href="">
+<meta name="robots" content="${robots}">
+<link rel="canonical" href="${esc(canonical || '')}">
 <style>
 :root{--p:#3C3489;--p2:#534AB7;--l:#EEEDFE;--g:#0F6E56;--line:#e7e6f0;--mut:#777;}
 *{box-sizing:border-box;margin:0;padding:0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;}
@@ -61,12 +65,12 @@ footer{text-align:center;color:var(--mut);font-size:12px;margin-top:30px;}
   <div class="sec">Explore more</div>
   <div class="cross">${crossHTML}</div>
   <div class="cta"><div style="font-size:20px;font-weight:800">List your property on NestUs — free</div><div style="opacity:.9;margin-top:6px">Reach students searching in your area.</div><a href="/">Get started →</a></div>
-  <footer>© ${new Date().getFullYear()} NestUs · nestus.in</footer>
+  <footer>© ${new Date().getFullYear()} NestUs · nestus.in · <a href="/privacy" style="color:var(--mut)">Privacy</a> · <a href="/terms" style="color:var(--mut)">Terms</a></footer>
 </div>
 </body></html>`;
 }
 
-export async function renderLanding(kind, slug) {
+export async function renderLanding(kind, slug, canonical) {
   const all = await getListings({});
   let matched, h1, title, desc, intro, label;
   if (kind === 'city') {
@@ -101,15 +105,107 @@ export async function renderLanding(kind, slug) {
     colleges.slice(0, 15).map(c => `<a href="/near/${slugify(c)}">Near ${esc(c)}</a>`).join('') +
     areas.slice(0, 15).map(a => `<a href="/area/${slugify(a)}">${esc(a)} area</a>`).join('');
 
-  return shell({ title, desc, h1, intro, cardsHTML: matched.map(cardHTML).join(''), crossHTML, count: matched.length });
+  return shell({ title, desc, h1, intro, cardsHTML: matched.map(cardHTML).join(''), crossHTML, count: matched.length, canonical });
+}
+
+function policyShell(title, heading, bodyHTML, canonical) {
+  return `<!DOCTYPE html><html lang="en"><head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>${esc(title)}</title><meta name="robots" content="index,follow">
+<link rel="canonical" href="${esc(canonical || '')}">
+<style>
+:root{--p:#3C3489;--p2:#534AB7;--line:#e7e6f0;--mut:#777;}
+*{box-sizing:border-box;margin:0;padding:0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;}
+body{background:#f4f4f8;color:#1c1b2e;line-height:1.6;}
+.nav{background:var(--p);color:#fff;padding:14px 22px;}.nav a{color:#fff;text-decoration:none;font-weight:800;font-size:20px;}
+.wrap{max-width:780px;margin:0 auto;padding:30px 18px 60px;background:#fff;}
+h1{font-size:26px;color:var(--p);margin:10px 0 6px;}h2{font-size:17px;color:var(--p2);margin:22px 0 8px;}
+p,li{font-size:14px;color:#333;margin-bottom:8px;}ul{padding-left:20px;}
+.upd{color:var(--mut);font-size:13px;margin-bottom:18px;}
+.note{background:#FFF7E6;border:1px solid #f0d9a0;border-radius:10px;padding:12px;font-size:13px;color:#7a5a00;margin:18px 0;}
+a.in{color:var(--p2);font-weight:600;}
+footer{text-align:center;color:var(--mut);font-size:12px;margin-top:24px;}
+</style></head><body>
+<div class="nav"><a href="/">Nest<span style="color:#c9c3f7">Us</span></a></div>
+<div class="wrap">
+<h1>${esc(heading)}</h1>
+<div class="upd">Last updated: 30 June 2026</div>
+<div class="note">This is a starting template provided for convenience. Please have it reviewed by a qualified lawyer before relying on it, and adapt it to your actual practices.</div>
+${bodyHTML}
+<footer><a class="in" href="/">← Back to NestUs</a> · <a class="in" href="/privacy">Privacy</a> · <a class="in" href="/terms">Terms</a></footer>
+</div></body></html>`;
+}
+
+function privacyBody() {
+  return `
+<p>NestUs ("we", "us") operates the website nestus.in, which helps students discover hostels and paying-guest (PG) accommodation and lets property owners list their properties. This policy explains what personal data we collect, why, and your rights under India's Digital Personal Data Protection Act, 2023 (DPDP Act).</p>
+<h2>1. Information we collect</h2>
+<ul>
+<li><b>Account data:</b> your name, email address, mobile number and password (stored securely, hashed) when you sign up as a student or owner.</li>
+<li><b>Listing data (owners):</b> property details, address, photos, pricing, contact number and amenities you submit.</li>
+<li><b>Enquiries & messages:</b> details you send when contacting an owner or messaging through the platform.</li>
+<li><b>Usage data:</b> basic technical information such as your IP address and device/browser type.</li>
+</ul>
+<h2>2. How we use your data</h2>
+<ul>
+<li>To create and manage your account and show you relevant hostels/PGs.</li>
+<li>To connect students with owners (your enquiry/contact details are shared with the relevant owner, and vice-versa).</li>
+<li>To verify and display property listings.</li>
+<li>To keep the service secure and to respond to support requests.</li>
+</ul>
+<h2>3. Sharing</h2>
+<p>We do not sell your personal data. Owner contact details on a published listing are visible to users so they can get in touch. When you send an enquiry or message, the recipient receives your name and contact details. We use trusted service providers (such as our hosting and database providers) to operate the platform.</p>
+<h2>4. Your rights</h2>
+<p>Under the DPDP Act you may request access to, correction of, or deletion of your personal data, and you may withdraw consent at any time. To exercise these rights, email <a class="in" href="mailto:nestus.care@gmail.com">nestus.care@gmail.com</a>.</p>
+<h2>5. Data retention & security</h2>
+<p>We keep your data only as long as needed to provide the service or as required by law, and we take reasonable measures to protect it. No method of transmission over the internet is completely secure.</p>
+<h2>6. Children</h2>
+<p>NestUs is intended for users aged 18 and above. If you are a minor, please use the platform with a parent or guardian.</p>
+<h2>7. Grievances & contact</h2>
+<p>For any privacy questions or complaints, contact our grievance contact at <a class="in" href="mailto:nestus.care@gmail.com">nestus.care@gmail.com</a>. We will respond within a reasonable time.</p>`;
+}
+
+function termsBody() {
+  return `
+<p>These Terms of Use govern your use of nestus.in ("NestUs"). By using the platform you agree to these terms.</p>
+<h2>1. What NestUs is</h2>
+<p>NestUs is a discovery platform that connects students looking for hostels/PGs with property owners. We are <b>not</b> the owner, operator, landlord or agent of any property listed, and we do not handle rent or bookings. Any agreement is strictly between the student and the owner.</p>
+<h2>2. Eligibility</h2>
+<p>You must be 18 or older (or use the platform with a parent/guardian) and provide accurate information.</p>
+<h2>3. For owners</h2>
+<ul>
+<li>You must own or be authorised to list the property, and provide accurate, current details, pricing and photos you have the right to use.</li>
+<li>You consent to your listing and contact details being shown publicly so students can contact you.</li>
+<li>Listing on NestUs is currently free; we may verify listings before publishing them.</li>
+</ul>
+<h2>4. For students</h2>
+<p>Verify details directly with the owner and inspect the property before making any payment. NestUs does not guarantee availability, accuracy, quality or safety of any listing, and is not responsible for dealings between you and an owner.</p>
+<h2>5. Acceptable use</h2>
+<p>Do not post false, misleading, unlawful or offensive content, attempt to disrupt the service, or misuse other users' contact details.</p>
+<h2>6. Content & intellectual property</h2>
+<p>Content you submit remains yours, but you grant NestUs a licence to display it on the platform. The NestUs name, design and software are ours.</p>
+<h2>7. Disclaimer & liability</h2>
+<p>The service is provided "as is" without warranties. To the extent permitted by law, NestUs is not liable for any loss arising from listings, dealings between users, or use of the platform.</p>
+<h2>8. Governing law</h2>
+<p>These terms are governed by the laws of India. Questions: <a class="in" href="mailto:nestus.care@gmail.com">nestus.care@gmail.com</a>.</p>`;
+}
+
+export function renderPolicy(kind, canonical) {
+  return kind === 'privacy'
+    ? policyShell('Privacy Policy — NestUs', 'Privacy Policy', privacyBody(), canonical)
+    : policyShell('Terms of Use — NestUs', 'Terms of Use', termsBody(), canonical);
 }
 
 export async function renderSitemap(origin) {
   const all = await getListings({});
-  const urls = new Set([origin + '/']);
-  [...new Set(all.map(l => l.city).filter(Boolean))].forEach(c => urls.add(`${origin}/hostels/${slugify(c)}`));
-  [...new Set(all.map(l => l.nearCollege).filter(Boolean))].forEach(c => urls.add(`${origin}/near/${slugify(c)}`));
-  [...new Set(all.map(l => l.area).filter(Boolean))].forEach(a => urls.add(`${origin}/area/${slugify(a)}`));
+  const urls = new Set([origin + '/', origin + '/privacy', origin + '/terms']);
+  const tally = (key) => {
+    const m = {}; all.forEach(l => { const v = l[key]; if (v) m[v] = (m[v] || 0) + 1; }); return m;
+  };
+  // Cities are broad — always include. Near/area only when substantial (3+) to avoid thin pages.
+  Object.keys(tally('city')).forEach(c => urls.add(`${origin}/hostels/${slugify(c)}`));
+  Object.entries(tally('nearCollege')).forEach(([c, n]) => { if (n >= 3) urls.add(`${origin}/near/${slugify(c)}`); });
+  Object.entries(tally('area')).forEach(([a, n]) => { if (n >= 3) urls.add(`${origin}/area/${slugify(a)}`); });
   return `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n` +
     [...urls].map(u => `  <url><loc>${u}</loc></url>`).join('\n') + `\n</urlset>`;
 }

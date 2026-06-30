@@ -2,6 +2,14 @@
 const state = { filters: {}, chips: new Set(), currentListing: null, selectedRoom: null, user: null, authMode: 'signup', authRole: 'student', ownerPhotos: [], detailPhoto: 0, editId: null, ownerLat: null, ownerLng: null, roomRows: [] };
 
 function escAttr(s) { return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/"/g, '&quot;'); }
+// HTML-escape any user-supplied text before inserting into innerHTML (prevents XSS).
+function esc(s) {
+  return String(s == null ? '' : s)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+// Only allow http(s) links (blocks javascript: and other schemes).
+function safeUrl(u) { return /^https?:\/\//i.test(String(u || '')) ? String(u) : ''; }
 function listingCode(id) { return 'NES-' + String(id).padStart(5, '0'); }
 
 async function searchMapView() {
@@ -120,7 +128,7 @@ function renderResultsMap() {
   const pts = [];
   list.forEach(l => {
     const c = coordsFor(l); pts.push(c);
-    L.marker(c).addTo(_resultsMap).bindPopup(`<b>${l.name}</b><br>${money(l.startingRent)}/mo<br><a href="#" onclick="closeResMapAndOpen(${l.id});return false;">View →</a>`);
+    L.marker(c).addTo(_resultsMap).bindPopup(`<b>${esc(l.name)}</b><br>${money(l.startingRent)}/mo<br><a href="#" onclick="closeResMapAndOpen(${l.id});return false;">View →</a>`);
   });
   setTimeout(() => { _resultsMap.invalidateSize(); if (pts.length) _resultsMap.fitBounds(pts, { padding: [40, 40], maxZoom: 14 }); }, 100);
 }
@@ -143,7 +151,7 @@ function cardHTML(l) {
   const photo = l.photos && l.photos[0];
   const imgStyle = photo ? ` has-photo" style="background-image:url('${photo}')` : '';
   const isNew = l.createdAt && (Date.now() - new Date(l.createdAt)) < 14 * 864e5;
-  const badges = [l.verified ? '<span class="badge v">✓ Verified</span>' : `<span class="badge">${l.gender}</span>`];
+  const badges = [l.verified ? '<span class="badge v">✓ Verified</span>' : `<span class="badge">${esc(l.gender)}</span>`];
   if (isNew) badges.push('<span class="badge new">New</span>');
   const sharing = roomSharing(l);
   const tags = [
@@ -154,8 +162,8 @@ function cardHTML(l) {
   return `<div class="card" onclick="openDetail(${l.id})">
     <div class="cimg${imgStyle}">${photo ? '' : '🏠'}<div class="badgewrap">${badges.join('')}</div></div>
     <div class="cbody">
-      <div class="cname">${l.name}</div>
-      <div class="cmeta">📍 <b>${l.distance || (l.area + ', ' + l.city)}</b></div>
+      <div class="cname">${esc(l.name)}</div>
+      <div class="cmeta">📍 <b>${esc(l.distance || (l.area + ', ' + l.city))}</b></div>
       <div class="stars">${starStr(l.rating)} <span style="color:var(--muted)">${l.rating || '—'} ${l.reviews ? '(' + l.reviews + ')' : ''}</span></div>
       ${sharing ? `<div class="sharing">${sharing}</div>` : ''}
       <div class="tagrow">${tags}</div>
@@ -179,16 +187,16 @@ function renderDetail() {
     const feats = [r.ac ? 'AC' : '', r.washroom ? 'Attached washroom' : '', r.furnished ? 'Furnished' : '']
       .filter(Boolean).map(f => `<span style="font-size:10px;font-weight:700;background:var(--light);color:var(--purple);padding:2px 7px;border-radius:6px">${f}</span>`).join(' ');
     return `<div class="roomrow ${state.selectedRoom && r.type === state.selectedRoom.type ? 'sel' : ''}" onclick="selRoom(${i})">
-      <div><span class="rt">${r.type}</span>${feats ? `<div style="display:flex;gap:4px;flex-wrap:wrap;margin-top:4px">${feats}</div>` : ''}</div>
+      <div><span class="rt">${esc(r.type)}</span>${feats ? `<div style="display:flex;gap:4px;flex-wrap:wrap;margin-top:4px">${feats}</div>` : ''}</div>
       <span class="rp">${money(r.rent)}/mo</span>
     </div>`;
   }).join('');
-  const amen = (l.amenities || []).map(a => `<span>${a}</span>`).join('');
+  const amen = (l.amenities || []).map(a => `<span>${esc(a)}</span>`).join('');
   const sr = state.selectedRoom || { type: '', rent: l.startingRent };
   const inc = [l.foodIncluded ? 'Mess food' : null,
     ...(l.amenities || []).filter(a => ['WiFi', 'Laundry', 'Power backup', 'Water purifier', 'Housekeeping'].includes(a))].filter(Boolean);
   const includesHTML = inc.length
-    ? `<div style="font-size:12px;color:#333;margin:0 0 10px;line-height:1.7"><b style="color:var(--purple)">Includes:</b> ${inc.map(x => '✓ ' + x).join('&nbsp;&nbsp;')}</div>` : '';
+    ? `<div style="font-size:12px;color:#333;margin:0 0 10px;line-height:1.7"><b style="color:var(--purple)">Includes:</b> ${inc.map(x => '✓ ' + esc(x)).join('&nbsp;&nbsp;')}</div>` : '';
 
   const photos = l.photos || [];
   const main = photos[state.detailPhoto] || photos[0];
@@ -202,22 +210,22 @@ function renderDetail() {
     <div class="detail-grid">
       <div>
         ${galleryHTML}
-        <div class="dname">${l.name}</div>
+        <div class="dname">${esc(l.name)}</div>
         <div style="font-size:11px;color:var(--muted);letter-spacing:.5px;margin-top:2px">ID: ${listingCode(l.id)}</div>
-        <div class="dmeta">📍 ${l.area}, ${l.city}${l.distance ? ' · ' + l.distance : ''}
+        <div class="dmeta">📍 ${esc(l.area)}, ${esc(l.city)}${l.distance ? ' · ' + esc(l.distance) : ''}
           ${l.verified ? ' · <b style="color:var(--green)">✓ Verified</b>' : ''}</div>
-        ${l.mapLink ? `<div style="margin:-6px 0 10px"><a href="${l.mapLink}" target="_blank" rel="noopener" style="color:var(--purple2);font-weight:700">📍 Open in Google Maps</a></div>` : ''}
+        ${safeUrl(l.mapLink) ? `<div style="margin:-6px 0 10px"><a href="${esc(safeUrl(l.mapLink))}" target="_blank" rel="noopener noreferrer" style="color:var(--purple2);font-weight:700">📍 Open in Google Maps</a></div>` : ''}
         <div class="stars">${starStr(l.rating)} ${l.rating || '—'} <span style="color:var(--muted);font-size:13px">${l.reviews ? l.reviews + ' reviews' : 'No reviews yet'}</span></div>
-        <p style="color:var(--muted);line-height:1.6;margin-top:12px">${l.description || ''}</p>
+        <p style="color:var(--muted);line-height:1.6;margin-top:12px">${esc(l.description || '')}</p>
         <div class="metrics">
-          <div class="metric"><div class="ml">For</div><div class="mv">${l.gender}</div></div>
-          <div class="metric"><div class="ml">Available from</div><div class="mv">${fmtDate(l.availableFrom)}</div></div>
-          <div class="metric"><div class="ml">Food</div><div class="mv">${l.foodDetail || (l.foodIncluded ? 'Included' : 'Not included')}</div></div>
+          <div class="metric"><div class="ml">For</div><div class="mv">${esc(l.gender)}</div></div>
+          <div class="metric"><div class="ml">Available from</div><div class="mv">${esc(fmtDate(l.availableFrom))}</div></div>
+          <div class="metric"><div class="ml">Food</div><div class="mv">${esc(l.foodDetail || (l.foodIncluded ? 'Included' : 'Not included'))}</div></div>
           <div class="metric"><div class="ml">Starting rent</div><div class="mv">${money(l.startingRent)}/mo</div></div>
         </div>
         <div class="sec" style="font-size:16px;margin:18px 0 8px">Amenities</div>
         <div class="amen">${amen || '<span>—</span>'}</div>
-        ${l.rules ? `<div class="sec" style="font-size:16px;margin:18px 0 8px">House rules</div><div style="color:var(--muted);font-size:13px;line-height:1.7">${l.rules}</div>` : ''}
+        ${l.rules ? `<div class="sec" style="font-size:16px;margin:18px 0 8px">House rules</div><div style="color:var(--muted);font-size:13px;line-height:1.7">${esc(l.rules)}</div>` : ''}
         ${safetyHTML(l)}
         ${reviewsHTML(l)}
       </div>
@@ -225,7 +233,7 @@ function renderDetail() {
         <div class="bookbox">
           <div style="font-weight:800;margin-bottom:12px">Room types <span style="font-size:11px;font-weight:400;color:var(--muted)">(tap to select)</span></div>
           ${rooms || '<div style="color:var(--muted);font-size:13px">Contact owner for room details.</div>'}
-          <div style="font-size:13px;color:var(--muted);margin:12px 0">Selected: <b id="sel-label">${sr.type ? sr.type + ' — ' + money(sr.rent) + '/mo' : money(l.startingRent) + '/mo'}</b></div>
+          <div style="font-size:13px;color:var(--muted);margin:12px 0">Selected: <b id="sel-label">${sr.type ? esc(sr.type) + ' — ' + money(sr.rent) + '/mo' : money(l.startingRent) + '/mo'}</b></div>
           ${includesHTML}
           <button class="btn" onclick="openContact()">Contact owner</button>
           <button class="btn alt" onclick="scheduleVisit()">📅 Schedule a visit</button>
@@ -249,8 +257,8 @@ function safetyHTML(l) {
     sf.biometric && 'Biometric / gated entry', sf.visitorRegister && 'Visitor register',
   ].filter(Boolean);
   const times = [];
-  if (sf.checkIn) times.push('Check-in: ' + sf.checkIn);
-  if (sf.checkOut) times.push('Check-out / curfew: ' + sf.checkOut);
+  if (sf.checkIn) times.push('Check-in: ' + esc(sf.checkIn));
+  if (sf.checkOut) times.push('Check-out / curfew: ' + esc(sf.checkOut));
   if (!badges.length && !times.length) return '';
   return `<div class="sec" style="font-size:16px;margin:18px 0 8px">Safety</div>
     ${badges.length ? `<div class="safetyrow">${badges.map(b => `<span>🛡️ ${b}</span>`).join('')}</div>` : ''}
@@ -275,9 +283,9 @@ function reviewsHTML(l) {
     : `<div style="font-size:13px;color:var(--muted)">Please <a style="color:var(--purple2);font-weight:700;cursor:pointer" onclick="openAuth('login')">log in</a> to leave a review.</div>`;
   const items = rl.length
     ? rl.slice().reverse().map(r => `<div class="reviewitem">
-        <div><b>${r.name}</b> <span class="stars">${starStr(r.rating)}</span></div>
-        ${r.text ? `<div style="font-size:13px;margin-top:3px">${r.text}</div>` : ''}
-        <div style="font-size:11px;color:var(--muted);margin-top:2px">${fmtDate(r.createdAt)}</div>
+        <div><b>${esc(r.name)}</b> <span class="stars">${starStr(r.rating)}</span></div>
+        ${r.text ? `<div style="font-size:13px;margin-top:3px">${esc(r.text)}</div>` : ''}
+        <div style="font-size:11px;color:var(--muted);margin-top:2px">${esc(fmtDate(r.createdAt))}</div>
       </div>`).join('')
     : `<div style="font-size:13px;color:var(--muted)">No reviews yet — be the first.</div>`;
   return `<div class="sec" style="font-size:16px;margin:22px 0 10px">Reviews ${rl.length ? `(${rl.length})` : ''}</div>${form}${items}`;
@@ -608,15 +616,15 @@ async function goCompare() {
 function renderCompare(list) {
   if (list.length < 2) { $('compare-table').innerHTML = '<div class="empty">Save at least 2 hostels to compare them side by side.</div>'; return; }
   const rows = [
-    ['', list.map(l => `<div style="font-weight:800">${l.name}</div><div style="font-size:11px;color:var(--muted)">${listingCode(l.id)}</div>`)],
-    ['Photo', list.map(l => (l.photos && l.photos[0]) ? `<div style="width:90px;height:60px;border-radius:8px;background:center/cover url('${l.photos[0]}')"></div>` : '🏠')],
+    ['', list.map(l => `<div style="font-weight:800">${esc(l.name)}</div><div style="font-size:11px;color:var(--muted)">${listingCode(l.id)}</div>`)],
+    ['Photo', list.map(l => (l.photos && l.photos[0]) ? `<div style="width:90px;height:60px;border-radius:8px;background:center/cover url('${encodeURI(l.photos[0])}')"></div>` : '🏠')],
     ['From', list.map(l => '<b>' + money(l.startingRent) + '</b>/mo')],
-    ['For', list.map(l => l.gender || '—')],
+    ['For', list.map(l => esc(l.gender || '—'))],
     ['Food', list.map(l => l.foodIncluded ? '✓ Included' : '—')],
     ['AC', list.map(l => l.hasAC ? '✓' : '—')],
     ['Rating', list.map(l => l.rating ? l.rating + '★ (' + (l.reviews || 0) + ')' : '—')],
-    ['Room types', list.map(l => roomSharing(l) || '—')],
-    ['Location', list.map(l => l.distance || (l.area + ', ' + l.city))],
+    ['Room types', list.map(l => esc(roomSharing(l) || '—'))],
+    ['Location', list.map(l => esc(l.distance || (l.area + ', ' + l.city)))],
     ['', list.map(l => `<button class="btn alt" style="width:auto;padding:6px 14px" onclick="openDetail(${l.id})">View</button>`)],
   ];
   $('compare-table').innerHTML = '<table class="cmp"><tbody>' +
@@ -687,8 +695,8 @@ async function loadConversations() {
   $('convo-list').innerHTML = list.length ? list.map(c =>
     `<div class="dash-card" style="cursor:pointer" onclick="openThread(${c.listingId}, ${c.otherId}, '${escapeJs(c.otherName)}', '${escapeJs(c.listingName)}')">
       <div class="dash-main">
-        <div class="dn">${c.otherName} <span style="font-weight:500;color:var(--muted);font-size:13px">· ${c.listingName}</span></div>
-        <div class="dm" style="margin-top:4px">${c.lastText}</div>
+        <div class="dn">${esc(c.otherName)} <span style="font-weight:500;color:var(--muted);font-size:13px">· ${esc(c.listingName)}</span></div>
+        <div class="dm" style="margin-top:4px">${esc(c.lastText)}</div>
         <div style="font-size:11px;color:var(--muted)">${fmtDateTime(c.lastAt)}</div>
       </div>
     </div>`).join('') : `<div class="empty">No messages yet.<br>Open a listing and tap <b>💬 Message owner</b> to start a conversation.</div>`;
@@ -727,7 +735,7 @@ async function loadThread() {
   const msgs = await res.json();
   const box = $('thread-messages');
   box.innerHTML = msgs.length ? msgs.map(m =>
-    `<div class="bubble ${m.mine ? 'mine' : 'theirs'}">${m.text}<div class="bt">${fmtDateTime(m.createdAt)}</div></div>`
+    `<div class="bubble ${m.mine ? 'mine' : 'theirs'}">${esc(m.text)}<div class="bt">${fmtDateTime(m.createdAt)}</div></div>`
   ).join('') : '<div style="color:var(--muted);font-size:13px;text-align:center;padding:20px">Say hello to start the conversation.</div>';
   box.scrollTop = box.scrollHeight;
 }
@@ -771,7 +779,7 @@ async function goMap() {
     const c = coordsFor(l);
     pts.push(c);
     L.marker(c).addTo(_mapView).bindPopup(
-      `<b>${l.name}</b><br>${money(l.startingRent)}/mo · ${l.gender}<br>` +
+      `<b>${esc(l.name)}</b><br>${money(l.startingRent)}/mo · ${esc(l.gender)}<br>` +
       `<a href="#" onclick="closePopupAndOpen(${l.id});return false;">View details →</a>`
     );
   });
@@ -825,8 +833,8 @@ async function loadDashboard() {
     return `<div class="dash-card">
       <div class="dash-thumb" style="${photo ? `background-image:url('${photo}')` : ''}">${photo ? '' : '🏠'}</div>
       <div class="dash-main">
-        <div class="dn">${l.name} <span style="font-weight:500;color:var(--muted);font-size:11px">${listingCode(l.id)}</span></div>
-        <div class="dm">${l.area || ''}${l.area ? ', ' : ''}${l.city} · ${money(l.startingRent)}/mo onwards</div>
+        <div class="dn">${esc(l.name)} <span style="font-weight:500;color:var(--muted);font-size:11px">${listingCode(l.id)}</span></div>
+        <div class="dm">${esc(l.area || '')}${l.area ? ', ' : ''}${esc(l.city)} · ${money(l.startingRent)}/mo onwards</div>
         <span class="statusbadge st-${st}">${st === 'approved' ? '✓ Live' : st === 'pending' ? '⏳ Awaiting review' : 'Rejected'}</span>
         ${avail ? '<span class="statusbadge st-rejected" style="margin-left:6px">Marked full</span>' : ''}
         <div class="dash-acts">
@@ -839,9 +847,9 @@ async function loadDashboard() {
 
   $('dash-enquiries').innerHTML = enquiries.length ? enquiries.slice().reverse().map(e =>
     `<div class="dash-card"><div class="dash-main">
-      <div class="dn">${e.name} <span style="font-weight:500;color:var(--muted);font-size:13px">→ ${e.listingName || ('listing #' + e.listingId)}</span></div>
-      <div class="dm">📞 ${e.phone} · ${new Date(e.createdAt).toLocaleString('en-IN')}</div>
-      ${e.message ? `<div style="font-size:13px">${e.message}</div>` : ''}
+      <div class="dn">${esc(e.name)} <span style="font-weight:500;color:var(--muted);font-size:13px">→ ${esc(e.listingName || ('listing #' + e.listingId))}</span></div>
+      <div class="dm">📞 ${esc(e.phone)} · ${new Date(e.createdAt).toLocaleString('en-IN')}</div>
+      ${e.message ? `<div style="font-size:13px">${esc(e.message)}</div>` : ''}
     </div></div>`).join('') : `<div class="empty">No enquiries yet.</div>`;
 }
 

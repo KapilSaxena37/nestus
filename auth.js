@@ -5,6 +5,21 @@ import { randomBytes, scryptSync, timingSafeEqual, createHmac } from 'node:crypt
 // sessions survive restarts; otherwise a default is used (users just re-login).
 const SESSION_SECRET = process.env.SESSION_SECRET || 'nestus-dev-secret-change-me';
 const SESSION_DAYS = 30;
+if (!process.env.SESSION_SECRET) {
+  console.warn('⚠ SESSION_SECRET is not set — set it in your host env so sessions cannot be forged.');
+}
+
+// --- Simple in-memory rate limiter (per IP + action) to slow brute force / reset abuse ---
+const _hits = new Map();
+export function rateLimit(ip, action, max = 10, windowMs = 15 * 60 * 1000) {
+  const key = `${action}:${ip}`;
+  const now = Date.now();
+  const rec = _hits.get(key);
+  if (!rec || now > rec.reset) { _hits.set(key, { count: 1, reset: now + windowMs }); return true; }
+  rec.count++;
+  if (rec.count > max) return false;
+  return true;
+}
 
 export function hashPassword(password) {
   const salt = randomBytes(16).toString('hex');

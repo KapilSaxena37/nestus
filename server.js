@@ -10,12 +10,13 @@ import {
   findUserByEmail, addUser, getUserById, setShortlist, uploadPhoto,
   getListingsByOwner, updateListing, addMessage, getMessages, updateUserData,
   getAllListings, findUserByPhone, getAllUsers, deleteListing, normalizePhone,
+  cleanNearCollege,
 } from './db.js';
 import {
   hashPassword, verifyPassword, signSession, verifySession,
-  parseCookies, SESSION_MAX_AGE,
+  parseCookies, SESSION_MAX_AGE, rateLimit,
 } from './auth.js';
-import { renderLanding, renderSitemap } from './landing.js';
+import { renderLanding, renderSitemap, renderPolicy } from './landing.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PUBLIC = join(__dirname, 'public');
@@ -60,6 +61,9 @@ async function currentUser(req) {
   const uid = verifySession(parseCookies(req).nestus_session);
   if (!uid) return null;
   return await getUserById(uid);
+}
+function clientIp(req) {
+  return (req.headers['x-forwarded-for'] || '').split(',')[0].trim() || req.socket.remoteAddress || 'unknown';
 }
 function publicUser(u) {
   return { id: u.id, name: u.name, email: u.email, phone: u.phone || '', role: u.role || 'student', shortlist: u.shortlist || [] };
@@ -130,17 +134,22 @@ const server = createServer(async (req, res) => {
 
       // POST /api/upload  (image as base64 -> stored, returns public URL)
       if (path === '/api/upload' && req.method === 'POST') {
+        // Require a logged-in user OR the admin key (blocks anonymous storage abuse).
+        const uploader = await currentUser(req);
+        const akey = url.searchParams.get('key') || req.headers['x-admin-key'];
+        if (!uploader && akey !== ADMIN_KEY) return send(res, 401, { error: 'Please sign in to upload photos' });
         const b = await readBody(req);
         const ext = EXT_BY_TYPE[b.contentType];
         if (!b.dataBase64 || !ext) return send(res, 400, { error: 'Please upload a JPG, PNG, WEBP or GIF image' });
         const buffer = Buffer.from(b.dataBase64, 'base64');
         if (buffer.length > 5 * 1024 * 1024) return send(res, 413, { error: 'Image too large (max 5 MB)' });
-        const url = await uploadPhoto(buffer, b.contentType, ext);
-        return send(res, 201, { url });
+        const photoUrl = await uploadPhoto(buffer, b.contentType, ext);
+        return send(res, 201, { url: photoUrl });
       }
 
       // ----- Auth -----
       if (path === '/api/auth/signup' && req.method === 'POST') {
+        if (!rateLimit(clientIp(req), 'signup', 10)) return send(res, 429, { error: 'Too many attempts — please wait a few minutes.' });
         const b = await readBody(req);
         const name = (b.name || '').trim(), email = (b.email || '').trim(), phone = (b.phone || '').trim();
         if (!name || !email || !b.password) return send(res, 400, { error: 'Name, email and password are required' });
@@ -157,6 +166,7 @@ const server = createServer(async (req, res) => {
         return send(res, 201, publicUser(user));
       }
       if (path === '/api/auth/login' && req.method === 'POST') {
+        if (!rateLimit(clientIp(req), 'login', 12)) return send(res, 429, { error: 'Too many login attempts — please wait a few minutes.' });
         const b = await readBody(req);
         const id = (b.login || b.email || '').trim();
         let user = await findUserByEmail(id);
@@ -167,6 +177,7 @@ const server = createServer(async (req, res) => {
         return send(res, 200, publicUser(user));
       }
       if (path === '/api/auth/forgot' && req.method === 'POST') {
+        if (!rateLimit(clientIp(req), 'forgot', 6)) return send(res, 429, { error: 'Too many attempts — please wait a few minutes.' });
         const b = await readBody(req);
         const user = await findUserByEmail((b.email || '').trim());
         if (!user || normalizePhone(user.phone) !== normalizePhone(b.phone))
@@ -421,6 +432,20 @@ const server = createServer(async (req, res) => {
         for (const id of ids) await deleteListing(id);
         return send(res, 200, { deleted: ids.length });
       }
+      // One-time tidy of existing listings' nearCollege (strip distances).
+      if (path === '/api/admin/clean-colleges' && req.method === 'POST') {
+        if (!authed) return send(res, 401, { error: 'Unauthorized' });
+        const all = await getAllListings();
+        let cleaned = 0;
+        for (const l of all) {
+          const c = cleanNearCollege(l.nearCollege, l.distance);
+          if (c.nearCollege !== (l.nearCollege || '') || c.distance !== (l.distance || '')) {
+            await updateListing(l.id, { nearCollege: c.nearCollege, distance: c.distance });
+            cleaned++;
+          }
+        }
+        return send(res, 200, { cleaned });
+      }
       // List users (for admin password reset).
       if (path === '/api/admin/users' && req.method === 'GET') {
         if (!authed) return send(res, 401, { error: 'Unauthorized' });
@@ -463,16 +488,21 @@ const server = createServer(async (req, res) => {
   // ---------- SEO landing pages (server-rendered HTML) ----------
   try {
     let lm;
+    const canon = `https://${req.headers.host}${path}`;
     if ((lm = path.match(/^\/hostels\/([a-z0-9-]+)$/)) && req.method === 'GET')
-      return send(res, 200, await renderLanding('city', lm[1]), 'text/html; charset=utf-8');
+      return send(res, 200, await renderLanding('city', lm[1], canon), 'text/html; charset=utf-8');
     if ((lm = path.match(/^\/near\/([a-z0-9-]+)$/)) && req.method === 'GET')
-      return send(res, 200, await renderLanding('near', lm[1]), 'text/html; charset=utf-8');
+      return send(res, 200, await renderLanding('near', lm[1], canon), 'text/html; charset=utf-8');
     if ((lm = path.match(/^\/area\/([a-z0-9-]+)$/)) && req.method === 'GET')
-      return send(res, 200, await renderLanding('area', lm[1]), 'text/html; charset=utf-8');
+      return send(res, 200, await renderLanding('area', lm[1], canon), 'text/html; charset=utf-8');
+    if (path === '/privacy' && req.method === 'GET')
+      return send(res, 200, renderPolicy('privacy', canon), 'text/html; charset=utf-8');
+    if (path === '/terms' && req.method === 'GET')
+      return send(res, 200, renderPolicy('terms', canon), 'text/html; charset=utf-8');
     if (path === '/sitemap.xml' && req.method === 'GET')
       return send(res, 200, await renderSitemap(`https://${req.headers.host}`), 'application/xml; charset=utf-8');
     if (path === '/robots.txt' && req.method === 'GET')
-      return send(res, 200, `User-agent: *\nAllow: /\nSitemap: https://${req.headers.host}/sitemap.xml\n`, 'text/plain; charset=utf-8');
+      return send(res, 200, `User-agent: *\nAllow: /\nDisallow: /admin.html\nDisallow: /api/\nSitemap: https://${req.headers.host}/sitemap.xml\n`, 'text/plain; charset=utf-8');
   } catch (err) {
     return send(res, 500, 'Server error', 'text/plain');
   }

@@ -3,6 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="robots" content="noindex,nofollow">
 <title>NestUs — Admin</title>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
@@ -80,7 +81,8 @@
   const esc=s=>String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/"/g,'&quot;');
   const code=id=>'NES-'+String(id).padStart(5,'0');
   function toast(m){const t=$('toast');t.textContent=m;t.classList.add('show');clearTimeout(t._t);t._t=setTimeout(()=>t.classList.remove('show'),2500);}
-  async function api(path,opts){return fetch(path+(path.includes('?')?'&':'?')+'key='+encodeURIComponent(KEY),opts).then(r=>r.json());}
+  async function api(path,opts){opts=opts||{};opts.headers=Object.assign({'X-Admin-Key':KEY},opts.headers||{});return fetch(path,opts).then(r=>r.json());}
+  function adminFetch(path,opts){opts=opts||{};opts.headers=Object.assign({'X-Admin-Key':KEY},opts.headers||{});return fetch(path,opts);}
   function ago(iso){if(!iso)return '—';const d=(Date.now()-new Date(iso))/86400000;if(d<1)return 'today';if(d<2)return 'yesterday';return Math.floor(d)+' days ago';}
   function dt(iso){try{return new Date(iso).toLocaleString('en-IN');}catch{return iso||'—';}}
 
@@ -95,7 +97,7 @@
 
   async function connect(){
     KEY=$('key').value.trim();
-    const r=await fetch('/api/admin/stats?key='+encodeURIComponent(KEY));
+    const r=await fetch('/api/admin/stats',{headers:{'X-Admin-Key':KEY}});
     if(r.status===401){toast('Wrong admin key');return;}
     $('panel').style.display='block';show('dash');
   }
@@ -121,6 +123,8 @@
         <div class="kv"><b>Last verification:</b> ${dt(s.lastVerifiedAt)} (${ago(s.lastVerifiedAt)})</div>
         <div class="kv"><b>Rooms available / full:</b> ${s.available} / ${s.full}</div>
         <div class="kv"><b>By city:</b> ${cities}</div>
+        <button class="neutral" style="margin-top:10px;padding:8px 14px;border-radius:8px;cursor:pointer" onclick="cleanColleges()">🧹 Tidy college names (for SEO)</button>
+        <div style="font-size:12px;color:var(--muted);margin-top:4px">Strips distances like "1.5 km" out of the nearby-college field so landing pages group cleanly.</div>
       </div>
       ${(s.duplicates&&s.duplicates.length)?`
         <div class="pcard" style="border-color:#e0b4b4;background:#fff7f7">
@@ -128,6 +132,12 @@
           ${s.duplicates.map(g=>`<div class="kv">• <b>${esc(g[0].name)}</b> (${esc(g[0].city)}) — ${g.length} copies: ${g.map(x=>code(x.id)).join(', ')}</div>`).join('')}
           <button class="neutral" style="margin-top:10px;padding:8px 14px;border-radius:8px;cursor:pointer" onclick="show('all')">Clean up →</button>
         </div>`:''}`;
+  }
+
+  async function cleanColleges(){
+    if(!confirm('Tidy nearby-college names across all listings? This strips trailing distances (e.g. "1.5 km").'))return;
+    const res=await api('/api/admin/clean-colleges',{method:'POST'});
+    toast(`Tidied ${res.cleaned||0} listing(s)`); loadDash();
   }
 
   // ---- All listings ----
@@ -213,12 +223,12 @@
       <div id="e-${l.id}"></div>`;
   }
   async function stageAct(id,action){
-    await fetch(`/api/admin/listings/${id}/${action}?key=`+encodeURIComponent(KEY),{method:'POST'});
+    await adminFetch(`/api/admin/listings/${id}/${action}`,{method:'POST'});
     toast('Updated');await loadAll();
   }
   async function deleteOne(id){
     if(!confirm('Delete this listing? Cannot be undone.'))return;
-    await fetch(`/api/admin/listings/${id}/delete?key=`+encodeURIComponent(KEY),{method:'POST'});
+    await adminFetch(`/api/admin/listings/${id}/delete`,{method:'POST'});
     toast('Deleted');await loadAll();
   }
 
@@ -316,7 +326,7 @@
       if(file.size>5*1024*1024){toast(file.name+' over 5MB');continue;}
       try{
         const dataBase64=await fileToB64(file);
-        const res=await fetch('/api/upload',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({filename:file.name,contentType:file.type,dataBase64})});
+        const res=await fetch('/api/upload',{method:'POST',headers:{'Content-Type':'application/json','X-Admin-Key':KEY},body:JSON.stringify({filename:file.name,contentType:file.type,dataBase64})});
         const d=await res.json();
         if(d.url){ed.photos.push(d.url);edRenderPhotos();added++;}
         else toast(d.error||'Upload failed');
