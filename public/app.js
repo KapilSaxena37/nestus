@@ -85,6 +85,22 @@ async function initHome() {
 
 function quickCity(c) { $('s-city').value = c; $('s-gender').value = 'Any'; $('s-college').value = ''; doSearch(); }
 
+// Keyword search (like the admin search): matches name, area, city, college, distance.
+async function homeSearch() {
+  const q = $('home-search').value.trim();
+  if (!q) return;
+  state.filters = { city: '', gender: 'Any', college: '' };
+  state.chips.clear();
+  document.querySelectorAll('#r-chips .chip').forEach(c => c.classList.remove('on'));
+  if ($('price-range')) { $('price-range').value = 20000; onPriceInput(); }
+  const all = await api('/api/listings');           // all approved listings
+  state.lastResults = Array.isArray(all) ? all : [];
+  route('results');
+  $('results-search').value = q;                    // reuse the in-place keyword filter
+  $('results-title').textContent = `Results for "${q}"`;
+  renderResultsCards();
+}
+
 function doSearch() {
   state.filters = { city: $('s-city').value, gender: $('s-gender').value, college: $('s-college').value.trim() };
   state.chips.clear();

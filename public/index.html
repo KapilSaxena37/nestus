@@ -50,6 +50,12 @@
       <div class="hero">
         <h1>Verified hostels &amp; PGs near your campus</h1>
         <p>No brokers · real photos · talk to owners directly</p>
+        <div class="herokw">
+          <span class="hsi">🔍</span>
+          <input id="home-search" placeholder="Search by hostel name, area or college…" autocomplete="off" onkeydown="if(event.key==='Enter')homeSearch()">
+          <button onclick="homeSearch()">Search</button>
+        </div>
+        <div class="herokw-or">or filter by city, gender &amp; area</div>
         <div class="searchbar">
           <div><label>City</label><select id="s-city"></select></div>
           <div><label>Gender</label>
