@@ -20,6 +20,7 @@
 <body>
   <div class="nav">
     <div class="brand" onclick="route('home')">Nest<span style="color:#c9c3f7">Us</span></div>
+    <input id="hdr-search" class="hdr-search" placeholder="🔍 Search hostels, area, college…" onkeydown="if(event.key==='Enter')headerSearch()">
     <div class="navlinks">
       <a onclick="route('home')">Home</a>
       <a onclick="goMap()">Map</a>
@@ -87,6 +88,7 @@
     <!-- RESULTS -->
     <section id="v-results" class="view">
       <button class="back" onclick="route('home')">← New search</button>
+      <input id="results-search" placeholder="🔍 Filter these results by name, area or college…" oninput="filterResults()" style="width:100%;border:1px solid var(--line);border-radius:10px;padding:11px;font-size:14px;margin-bottom:14px;background:#fff">
       <div class="rhead">
         <h2 id="results-title">Hostels &amp; PGs</h2>
         <div class="sortwrap">Sort by
@@ -191,7 +193,7 @@
         <div class="fsec">Property details</div>
         <div class="row2">
           <div class="field"><label>Property name *</label><input id="o-name" placeholder="e.g. Shree Girls Hostel"></div>
-          <div class="field"><label>City *</label><select id="o-city"><option>Nagpur</option><option>Indore</option><option>Pune</option><option>Bhopal</option><option>Kota</option></select></div>
+          <div class="field"><label>City *</label><select id="o-city"><option selected>Indore</option><option>Nagpur</option><option>Pune</option><option>Bhopal</option><option>Kota</option></select></div>
         </div>
         <div class="row2">
           <div class="field"><label>Area / locality</label><input id="o-area" placeholder="Dharampeth"></div>
