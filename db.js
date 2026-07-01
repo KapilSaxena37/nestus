@@ -109,44 +109,62 @@ async function sbUpload(name, buffer, contentType) {
 }
 const rowToListing = (r) => ({ id: r.id, ...r.data });
 
+// --- Listings cache (Supabase mode) ---
+// Reads are served from memory for a few seconds so a burst of visitors doesn't
+// hit Supabase on every request. Any write invalidates it, so changes show fast.
+let _lcache = null, _lcacheAt = 0;
+const LCACHE_TTL = 30000; // 30 seconds
+async function sbListings() {
+  if (_lcache && Date.now() - _lcacheAt < LCACHE_TTL) return _lcache;
+  const rows = await sb('listings?select=id,data');
+  _lcache = rows.map(rowToListing);
+  _lcacheAt = Date.now();
+  return _lcache;
+}
+function invalidateListings() { _lcache = null; }
+// Fresh single-row fetch (bypasses cache) for read-modify-write safety.
+async function sbListingFresh(id) {
+  const rows = await sb(`listings?id=eq.${Number(id)}&select=id,data`);
+  return rows.length ? rowToListing(rows[0]) : null;
+}
+
 const SB = {
   async ensureSeed() {
     const existing = await sb('listings?select=id&limit=1');
     if (existing.length) return;
     const seed = loadSeed();
     if (seed.length) await sb('listings', { method: 'POST', body: JSON.stringify(seed.map(s => ({ data: s }))) });
+    invalidateListings();
   },
   async getListings(f) {
-    const rows = await sb('listings?select=id,data');
-    return applyFilters(rows.map(rowToListing), f);
+    return applyFilters(await sbListings(), f);
   },
   async getListing(id) {
-    const rows = await sb(`listings?id=eq.${Number(id)}&select=id,data`);
-    return rows.length ? rowToListing(rows[0]) : null;
+    return (await sbListings()).find(l => l.id === Number(id)) || null;
   },
   async addListing(data) {
     const row = (await sb('listings', {
       method: 'POST', headers: { Prefer: 'return=representation' },
       body: JSON.stringify({ data: newListing(data) }),
     }))[0];
+    invalidateListings();
     return rowToListing(row);
   },
   async setStatus(id, status) {
-    const current = await SB.getListing(id);
+    const current = await sbListingFresh(id);
     if (!current) return null;
     const { id: _omit, ...data } = current;
     data.status = status;
     if (status === 'approved') { data.verified = true; data.verifiedAt = new Date().toISOString(); }
     await sb(`listings?id=eq.${Number(id)}`, { method: 'PATCH', body: JSON.stringify({ data }) });
+    invalidateListings();
     return { id: Number(id), ...data };
   },
   async getPending() {
-    const rows = await sb('listings?select=id,data');
-    return rows.map(rowToListing).filter(l => l.status === 'pending');
+    return (await sbListings()).filter(l => l.status === 'pending');
   },
   async getAllListings() {
-    const rows = await sb('listings?select=id,data');
-    return rows.map(rowToListing);
+    return await sbListings();
   },
   async addEnquiry(data) {
     const row = (await sb('enquiries', {
@@ -192,17 +210,18 @@ const SB = {
   },
   async deleteListing(id) {
     await sb(`listings?id=eq.${Number(id)}`, { method: 'DELETE' });
+    invalidateListings();
     return true;
   },
   async getListingsByOwner(ownerId) {
-    const rows = await sb('listings?select=id,data');
-    return rows.map(rowToListing).filter(l => l.ownerId === Number(ownerId));
+    return (await sbListings()).filter(l => l.ownerId === Number(ownerId));
   },
   async updateListing(id, patch) {
-    const current = await SB.getListing(id);
+    const current = await sbListingFresh(id);
     if (!current) return null;
     const { id: _i, ...data } = { ...current, ...patch };
     await sb(`listings?id=eq.${Number(id)}`, { method: 'PATCH', body: JSON.stringify({ data }) });
+    invalidateListings();
     return { id: Number(id), ...data };
   },
   async getUserById(id) {

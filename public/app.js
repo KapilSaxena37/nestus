@@ -55,14 +55,28 @@ function toast(msg) {
   clearTimeout(t._t); t._t = setTimeout(() => t.classList.remove('show'), 2600);
 }
 
-function route(view) {
+function route(view, push = true) {
+  const el = $('v-' + view);
+  if (!el) return;
   document.querySelectorAll('.view').forEach(v => v.classList.remove('show'));
-  $('v-' + view).classList.add('show');
+  el.classList.add('show');
   // Header search is redundant on the home page (big hero search there) — show only on inner pages.
   const hs = $('hdr-search-wrap');
   if (hs) hs.classList.toggle('show', view !== 'home');
+  // Record the view in browser history so the Back button navigates within the app
+  // instead of leaving the site.
+  if (push) { try { history.pushState({ view }, '', '#' + view); } catch (e) { /* ignore */ } }
   window.scrollTo({ top: 0, behavior: 'smooth' });
 }
+
+// Back/forward buttons: restore the in-app view (and close any open overlay).
+window.addEventListener('popstate', (e) => {
+  ['modal', 'auth-modal', 'thread-modal', 'lightbox'].forEach(id => {
+    const m = $(id); if (m) m.classList.remove('show');
+  });
+  const v = (e.state && e.state.view) || 'home';
+  route(v, false);
+});
 
 // ---------- HOME ----------
 async function initHome() {
@@ -976,6 +990,9 @@ async function editListing(id) {
 
 initHome();
 loadAuthState();
+
+// Seed the history stack with the home view so Back has somewhere to return to.
+try { history.replaceState({ view: 'home' }, '', location.pathname + location.search); } catch (e) { /* ignore */ }
 
 // Open a specific listing if arriving from a landing page (/?listing=ID)
 (function () {
