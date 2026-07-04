@@ -174,7 +174,7 @@ function currentResults() {
   const q = ($('results-search') ? $('results-search').value.trim().toLowerCase() : '');
   const all = state.lastResults || [];
   if (!q) return all;
-  return all.filter(l => [l.name, l.area, l.city, l.distance, l.nearCollege]
+  return all.filter(l => [l.name, l.area, l.city, l.distance, l.nearCollege, l.address]
     .some(v => String(v || '').toLowerCase().includes(q)));
 }
 function renderResultsCards() {
@@ -297,7 +297,8 @@ function renderDetail() {
         <div style="font-size:11px;color:var(--muted);letter-spacing:.5px;margin-top:2px">ID: ${listingCode(l.id)}</div>
         <div class="dmeta">📍 ${esc(l.area)}, ${esc(l.city)}${l.distance ? ' · ' + esc(l.distance) : ''}
           ${l.verified ? ' · <b style="color:var(--green)">✓ Verified</b>' : ''}</div>
-        ${safeUrl(l.mapLink) ? `<div style="margin:-6px 0 10px"><a href="${esc(safeUrl(l.mapLink))}" target="_blank" rel="noopener noreferrer" style="color:var(--purple2);font-weight:700">📍 Open in Google Maps</a></div>` : ''}
+        ${l.address ? `<div style="font-size:13px;color:var(--muted);margin:2px 0 6px">🏠 ${esc(l.address)}</div>` : ''}
+        ${safeUrl(l.mapLink) ? `<div style="margin:-2px 0 10px"><a href="${esc(safeUrl(l.mapLink))}" target="_blank" rel="noopener noreferrer" style="color:var(--purple2);font-weight:700">📍 Open in Google Maps</a></div>` : ''}
         <div class="stars">${starStr(l.rating)} ${l.rating || '—'} <span style="color:var(--muted);font-size:13px">${l.reviews ? l.reviews + ' reviews' : 'No reviews yet'}</span></div>
         <p style="color:var(--muted);line-height:1.6;margin-top:12px">${esc(l.description || '')}</p>
         <div class="metrics">
@@ -445,7 +446,7 @@ async function submitListing() {
     checkIn: $('sf-checkin').value.trim(), checkOut: $('sf-checkout').value.trim(),
   };
   const payload = {
-    name, city, area: $('o-area').value.trim(), nearCollege: $('o-college').value.trim(),
+    name, city, area: $('o-area').value.trim(), nearCollege: $('o-college').value.trim(), address: $('o-address').value.trim(),
     distance: $('o-college').value.trim() ? 'Near ' + $('o-college').value.trim() : '',
     gender: $('o-gender').value, startingRent,
     foodIncluded: $('o-food').value === 'true', hasAC: rooms.some(r => r.ac) || amenities.includes('AC'),
@@ -475,7 +476,7 @@ async function submitListing() {
 }
 
 function clearOwnerForm() {
-  ['o-name', 'o-area', 'o-college', 'o-phone', 'o-wa', 'o-desc', 'o-maplink', 'sf-checkin', 'sf-checkout'].forEach(id => { if ($(id)) $(id).value = ''; });
+  ['o-name', 'o-area', 'o-college', 'o-address', 'o-phone', 'o-wa', 'o-desc', 'o-maplink', 'sf-checkin', 'sf-checkout'].forEach(id => { if ($(id)) $(id).value = ''; });
   ['sf-guard', 'sf-warden', 'sf-biometric', 'sf-visitors'].forEach(id => { if ($(id)) $(id).checked = false; });
   document.querySelectorAll('#o-amen input').forEach(cb => { cb.checked = cb.value === 'WiFi'; });
   state.ownerPhotos = [];
@@ -962,6 +963,7 @@ async function editListing(id) {
   $('o-city').value = l.city || 'Nagpur';
   $('o-area').value = l.area || '';
   $('o-college').value = l.nearCollege || '';
+  $('o-address').value = l.address || '';
   $('o-gender').value = l.gender || 'Girls';
   $('o-date').value = l.availableFrom || '';
   $('o-food').value = l.foodIncluded ? 'true' : 'false';

@@ -74,7 +74,7 @@
 <script>
   const CITIES = ['Nagpur','Indore','Pune','Bhopal','Kota'];
   const CITY_COORDS = {Nagpur:[21.1458,79.0882],Indore:[22.7196,75.8577],Pune:[18.5204,73.8567],Bhopal:[23.2599,77.4126],Kota:[25.2138,75.8648]};
-  const AMEN = ['WiFi','CCTV','Laundry','Water purifier','Parking','Power backup','AC','Study room'];
+  const AMEN = ['WiFi','CCTV','Laundry','Washing machine','Water purifier','Fridge','TV','Geyser','Parking','Power backup','AC','Housekeeping','Study room','Lift'];
   let KEY='';
   const $=id=>document.getElementById(id);
   const money=n=>'₹'+Number(n||0).toLocaleString('en-IN');
@@ -153,7 +153,7 @@
   function matchSearch(l){
     if(!_search)return true;
     const q=_search.toLowerCase();
-    return [l.name,code(l.id),l.city,l.area,l.nearCollege,l.ownerName,l.contactPhone].some(v=>String(v||'').toLowerCase().includes(q));
+    return [l.name,code(l.id),l.city,l.area,l.nearCollege,l.address,l.ownerName,l.contactPhone].some(v=>String(v||'').toLowerCase().includes(q));
   }
   function renderAll(){
     const counts=f=>_all.filter(l=>matchFilter(l,f)).length;
@@ -255,7 +255,8 @@
         <div class="f"><label>Name</label><input id="e-name" value="${esc(l.name)}"></div>
         <div class="f"><label>City</label><select id="e-city">${CITIES.map(c=>`<option ${c===l.city?'selected':''}>${c}</option>`).join('')}</select></div>
         <div class="f"><label>Area</label><input id="e-area" value="${esc(l.area||'')}"></div>
-        <div class="f"><label>Nearest college</label><input id="e-col" value="${esc(l.nearCollege||'')}"></div>
+        <div class="f"><label>Near College / Company / Area</label><input id="e-col" value="${esc(l.nearCollege||'')}"></div>
+        <div class="f"><label>Full address</label><input id="e-address" value="${esc(l.address||'')}"></div>
         <div class="f"><label>For</label><select id="e-gender">${['Girls','Boys','Co-ed'].map(g=>`<option ${g===l.gender?'selected':''}>${g}</option>`).join('')}</select></div>
         <div class="f"><label>Available from</label><input id="e-date" type="date" value="${esc(l.availableFrom||'')}"></div>
         <div class="f"><label>Food included</label><select id="e-food"><option value="true" ${l.foodIncluded?'selected':''}>Yes</option><option value="false" ${!l.foodIncluded?'selected':''}>No</option></select></div>
@@ -380,7 +381,7 @@
     const rooms=ed.rooms.filter(r=>r.type&&String(r.type).trim()&&Number(r.rent)>0).map(r=>({type:String(r.type).trim(),rent:Number(r.rent),ac:!!r.ac,washroom:!!r.washroom,furnished:!!r.furnished}));
     const amenities=[...document.querySelectorAll('#ed-amen input:checked')].map(c=>c.value);
     const patch={
-      name:$('e-name').value,city:$('e-city').value,area:$('e-area').value,nearCollege:$('e-col').value,
+      name:$('e-name').value,city:$('e-city').value,area:$('e-area').value,nearCollege:$('e-col').value,address:$('e-address').value,
       gender:$('e-gender').value,availableFrom:$('e-date').value,foodIncluded:$('e-food').value==='true',foodDetail:$('e-fooddetail').value,
       contactPhone:$('e-phone').value,contactWhatsApp:$('e-wa').value,description:$('e-desc').value,rules:$('e-rules').value,
       amenities,rooms,photos:ed.photos,mapLink:$('e-map').value,
@@ -455,7 +456,7 @@
       const o={};H.forEach((h,idx)=>o[h]=(r[idx]||'').trim());
       const rooms=[];[1,2,3].forEach(n=>{const t=o['room'+n+'Type'],rt=Number(o['room'+n+'Rent']);if(t&&rt>0)rooms.push({type:t,rent:rt,ac:bool(o['room'+n+'AC']),washroom:bool(o['room'+n+'Washroom']),furnished:bool(o['room'+n+'Furnished'])});});
       let rent=Number(o.startingRent)||0;if(!rent&&rooms.length)rent=Math.min(...rooms.map(x=>x.rent));if(!rooms.length&&rent)rooms.push({type:'Standard room',rent});
-      return {name:o.name,city:o.city,area:o.area,nearCollege:o.nearCollege,gender:o.gender||'Co-ed',startingRent:rent,
+      return {name:o.name,city:o.city,area:o.area,nearCollege:o.nearCollege,address:o.address||'',gender:o.gender||'Co-ed',startingRent:rent,
         contactPhone:o.contactPhone,contactWhatsApp:o.contactWhatsApp,foodIncluded:bool(o.foodIncluded),foodDetail:o.foodDetail||'',
         amenities:(o.amenities||'').split(';').map(a=>a.trim()).filter(Boolean),availableFrom:o.availableFrom||'',description:o.description||'',rules:o.rules||'',
         mapLink:o.mapLink||'',lat:o.lat?Number(o.lat):undefined,lng:o.lng?Number(o.lng):undefined,

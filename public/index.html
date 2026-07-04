@@ -61,7 +61,7 @@
           <div><label>Gender</label>
             <select id="s-gender"><option>Any</option><option>Girls</option><option>Boys</option><option>Co-ed</option></select>
           </div>
-          <div><label>Near college / area</label><input id="s-college" placeholder="e.g. VNIT, Dharampeth"></div>
+          <div><label>Near College / Company / Area</label><input id="s-college" placeholder="e.g. VNIT, Infosys, Dharampeth"></div>
           <button class="go" onclick="doSearch()">Search</button>
         </div>
       </div>
@@ -206,9 +206,10 @@
           <div class="field"><label>City *</label><select id="o-city"><option selected>Indore</option><option>Nagpur</option><option>Pune</option><option>Bhopal</option><option>Kota</option></select></div>
         </div>
         <div class="row2">
-          <div class="field"><label>Area / locality</label><input id="o-area" placeholder="Dharampeth"></div>
-          <div class="field"><label>Nearest college</label><input id="o-college" placeholder="VNIT"></div>
+          <div class="field"><label>Area / locality</label><input id="o-area" placeholder="Dharampeth / Vijay Nagar"></div>
+          <div class="field"><label>Near College / Company / Area</label><input id="o-college" placeholder="e.g. VNIT, Infosys, Allen"></div>
         </div>
+        <div class="field"><label>Full address</label><input id="o-address" placeholder="Building, street, landmark, area, city, pin code"></div>
         <div class="row2">
           <div class="field"><label>For</label><select id="o-gender"><option>Girls</option><option>Boys</option><option>Co-ed</option></select></div>
           <div class="field"><label>Available from</label><input id="o-date" type="date"></div>
@@ -242,11 +243,17 @@
           <label><input type="checkbox" value="WiFi" checked> WiFi</label>
           <label><input type="checkbox" value="CCTV"> CCTV</label>
           <label><input type="checkbox" value="Laundry"> Laundry</label>
-          <label><input type="checkbox" value="Water purifier"> Water purifier</label>
+          <label><input type="checkbox" value="Washing machine"> Washing machine</label>
+          <label><input type="checkbox" value="Water purifier"> Water purifier (RO)</label>
+          <label><input type="checkbox" value="Fridge"> Fridge</label>
+          <label><input type="checkbox" value="TV"> TV</label>
+          <label><input type="checkbox" value="Geyser"> Geyser / hot water</label>
           <label><input type="checkbox" value="Parking"> Parking</label>
           <label><input type="checkbox" value="Power backup"> Power backup</label>
           <label><input type="checkbox" value="AC"> AC rooms</label>
+          <label><input type="checkbox" value="Housekeeping"> Housekeeping</label>
           <label><input type="checkbox" value="Study room"> Study room</label>
+          <label><input type="checkbox" value="Lift"> Lift</label>
         </div>
         <div class="fsec">Safety &amp; rules</div>
         <div class="checks">

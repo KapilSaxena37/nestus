@@ -220,7 +220,7 @@ const server = createServer(async (req, res) => {
         if (listing.ownerId !== u.id) return send(res, 403, { error: 'This is not your listing' });
         const b = await readBody(req);
         // Only allow these fields to be changed by the owner.
-        const allowed = ['name', 'area', 'nearCollege', 'distance', 'gender', 'startingRent',
+        const allowed = ['name', 'area', 'nearCollege', 'address', 'distance', 'gender', 'startingRent',
           'foodIncluded', 'foodDetail', 'hasAC', 'availableFrom', 'description', 'amenities',
           'rooms', 'rules', 'contactPhone', 'contactWhatsApp', 'photos', 'available', 'lat', 'lng',
           'safety', 'mapLink'];
@@ -386,7 +386,7 @@ const server = createServer(async (req, res) => {
       if (aum && req.method === 'POST') {
         if (!authed) return send(res, 401, { error: 'Unauthorized' });
         const b = await readBody(req);
-        const allowed = ['name', 'area', 'nearCollege', 'distance', 'city', 'gender', 'startingRent',
+        const allowed = ['name', 'area', 'nearCollege', 'address', 'distance', 'city', 'gender', 'startingRent',
           'foodIncluded', 'foodDetail', 'hasAC', 'availableFrom', 'description', 'amenities',
           'rooms', 'rules', 'contactPhone', 'contactWhatsApp', 'photos', 'available', 'lat', 'lng',
           'safety', 'mapLink'];
