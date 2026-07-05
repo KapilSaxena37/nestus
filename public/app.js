@@ -48,6 +48,7 @@ let _mapView = null, _pickMap = null, _pickMarker = null;
 const $ = (id) => document.getElementById(id);
 const api = (path, opts) => fetch(path, opts).then(r => r.json());
 const money = (n) => '₹' + Number(n).toLocaleString('en-IN');
+const rentLabel = (l) => l.startingRent ? money(l.startingRent) + '/mo' : 'Price on request';
 const starStr = (r) => { const f = Math.round(r); return '★★★★★'.slice(0, f) + '☆☆☆☆☆'.slice(0, 5 - f); };
 
 function toast(msg) {
@@ -66,6 +67,8 @@ function route(view, push = true) {
   // Record the view in browser history so the Back button navigates within the app
   // instead of leaving the site.
   if (push) { try { history.pushState({ view }, '', '#' + view); } catch (e) { /* ignore */ } }
+  if (window.gtag) gtag('event', 'page_view', { page_path: '#' + view, page_title: 'NestUs · ' + view });
+  const sc = $('sticky-contact'); if (sc) sc.classList.toggle('show', view === 'detail');
   window.scrollTo({ top: 0, behavior: 'smooth' });
 }
 
@@ -160,6 +163,7 @@ async function loadResults() {
   const pr = Number($('price-range') ? $('price-range').value : 20000);
   if (pr < 20000) f.maxRent = pr;
   const params = new URLSearchParams(Object.entries(f).filter(([, v]) => v && v !== 'Any')).toString();
+  $('results-cards').innerHTML = skeletonCards(6); // show placeholders while loading
   const list = await api('/api/listings?' + params);
   state.lastResults = list;
 
@@ -211,11 +215,15 @@ function renderResultsMap() {
   const pts = [];
   list.forEach(l => {
     const c = coordsFor(l); pts.push(c);
-    L.marker(c).addTo(_resultsMap).bindPopup(`<b>${esc(l.name)}</b><br>${money(l.startingRent)}/mo<br><a href="#" onclick="closeResMapAndOpen(${l.id});return false;">View →</a>`);
+    L.marker(c).addTo(_resultsMap).bindPopup(`<b>${esc(l.name)}</b><br>${rentLabel(l)}<br><a href="#" onclick="closeResMapAndOpen(${l.id});return false;">View →</a>`);
   });
   setTimeout(() => { _resultsMap.invalidateSize(); if (pts.length) _resultsMap.fitBounds(pts, { padding: [40, 40], maxZoom: 14 }); }, 100);
 }
 function closeResMapAndOpen(id) { if (_resultsMap) _resultsMap.closePopup(); openDetail(id); }
+
+function skeletonCards(n) {
+  return Array(n).fill('<div class="card skel"><div class="cimg skel-box"></div><div class="cbody"><div class="skel-line" style="width:70%"></div><div class="skel-line" style="width:45%"></div><div class="skel-line" style="width:30%"></div></div></div>').join('');
+}
 
 function roomSharing(l) {
   if (!l.rooms || !l.rooms.length) return '';
@@ -242,15 +250,16 @@ function cardHTML(l) {
     l.hasAC ? '❄ AC' : null,
     l.startingRent && l.startingRent <= 5000 ? '💰 Budget' : null,
   ].filter(Boolean).map(t => `<span class="tag">${t}</span>`).join('');
+  const loc = l.distance || [l.area, l.city].filter(Boolean).join(', ');
   return `<div class="card" onclick="openDetail(${l.id})">
     <div class="cimg${imgStyle}">${photo ? '' : '🏠'}<div class="badgewrap">${badges.join('')}</div></div>
     <div class="cbody">
       <div class="cname">${esc(l.name)}</div>
-      <div class="cmeta">📍 <b>${esc(l.distance || (l.area + ', ' + l.city))}</b></div>
-      <div class="stars">${starStr(l.rating)} <span style="color:var(--muted)">${l.rating || '—'} ${l.reviews ? '(' + l.reviews + ')' : ''}</span></div>
+      ${loc ? `<div class="cmeta">📍 <b>${esc(loc)}</b></div>` : ''}
+      ${l.rating ? `<div class="stars">${starStr(l.rating)} <span style="color:var(--muted)">${l.rating} ${l.reviews ? '(' + l.reviews + ')' : ''}</span></div>` : ''}
       ${sharing ? `<div class="sharing">${sharing}</div>` : ''}
-      <div class="tagrow">${tags}</div>
-      <div class="price">${money(l.startingRent)} <small>/mo onwards</small></div>
+      ${tags ? `<div class="tagrow">${tags}</div>` : ''}
+      <div class="price">${l.startingRent ? money(l.startingRent) + ' <small>/mo onwards</small>' : '<small style="color:var(--muted)">Price on request</small>'}</div>
     </div></div>`;
 }
 
@@ -286,8 +295,33 @@ function renderDetail() {
   const galleryHTML = main
     ? `<div class="gallery has-photo" style="background-image:url('${main}');cursor:zoom-in" onclick="openLightbox()"><span class="zoomhint">🔍 ${photos.length} photo${photos.length > 1 ? 's' : ''}</span></div>` +
       (photos.length > 1 ? `<div class="thumbs">${photos.map((p, i) =>
-        `<img src="${p}" class="${i === state.detailPhoto ? 'on' : ''}" onclick="setDetailPhoto(${i})">`).join('')}</div>` : '')
+        `<img src="${p}" loading="lazy" class="${i === state.detailPhoto ? 'on' : ''}" onclick="setDetailPhoto(${i})">`).join('')}</div>` : '')
     : `<div class="gallery">🏠</div>`;
+
+  const loc = [l.area, l.city].filter(Boolean).join(', ');
+  const mapHref = safeUrl(l.mapLink)
+    || (typeof l.lat === 'number' && typeof l.lng === 'number' ? `https://www.google.com/maps?q=${l.lat},${l.lng}` : '')
+    || (l.address ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(l.address)}` : '');
+
+  // Only show fields that have a value.
+  const metrics = [];
+  if (l.gender) metrics.push(['For', esc(l.gender)]);
+  if (l.availableFrom) metrics.push(['Available from', esc(fmtDate(l.availableFrom))]);
+  const foodTxt = l.foodDetail || (l.foodIncluded === true ? 'Included' : (l.foodIncluded === false ? 'Not included' : ''));
+  if (foodTxt) metrics.push(['Food', esc(foodTxt)]);
+  if (l.startingRent) metrics.push(['Starting rent', money(l.startingRent) + '/mo']);
+  const metricsHTML = metrics.length ? `<div class="metrics">${metrics.map(([k, v]) => `<div class="metric"><div class="ml">${k}</div><div class="mv">${v}</div></div>`).join('')}</div>` : '';
+
+  const costs = [];
+  if (l.deposit) costs.push(['Deposit', money(l.deposit)]);
+  if (l.electricity) costs.push(['Electricity', esc(l.electricity)]);
+  if (l.noticePeriod) costs.push(['Notice period', esc(l.noticePeriod)]);
+  if (l.depositRefund) costs.push(['Deposit refund', esc(l.depositRefund)]);
+  if (l.extraCharges) costs.push(['Other charges', esc(l.extraCharges)]);
+  const costsHTML = costs.length ? `<div class="sec" style="font-size:16px;margin:18px 0 8px">Costs &amp; terms</div><div class="metrics">${costs.map(([k, v]) => `<div class="metric"><div class="ml">${k}</div><div class="mv">${v}</div></div>`).join('')}</div>` : '';
+
+  const selText = sr.type ? esc(sr.type) + ' — ' + money(sr.rent) + '/mo' : (l.startingRent ? money(l.startingRent) + '/mo' : 'Price on request');
+  const canMessage = l.ownerId && (!state.user || state.user.id !== l.ownerId);
 
   $('detail-content').innerHTML = `
     <div class="detail-grid">
@@ -295,38 +329,44 @@ function renderDetail() {
         ${galleryHTML}
         <div class="dname">${esc(l.name)}</div>
         <div style="font-size:11px;color:var(--muted);letter-spacing:.5px;margin-top:2px">ID: ${listingCode(l.id)}</div>
-        <div class="dmeta">📍 ${esc(l.area)}, ${esc(l.city)}${l.distance ? ' · ' + esc(l.distance) : ''}
-          ${l.verified ? ' · <b style="color:var(--green)">✓ Verified</b>' : ''}</div>
+        ${loc || l.distance || l.verified ? `<div class="dmeta">📍 ${esc(l.distance || loc)}${l.distance && loc ? ' · ' + esc(loc) : ''}${l.verified ? ' · <b style="color:var(--green)">✓ Verified</b>' : ''}</div>` : ''}
         ${l.address ? `<div style="font-size:13px;color:var(--muted);margin:2px 0 6px">🏠 ${esc(l.address)}</div>` : ''}
-        ${safeUrl(l.mapLink) ? `<div style="margin:-2px 0 10px"><a href="${esc(safeUrl(l.mapLink))}" target="_blank" rel="noopener noreferrer" style="color:var(--purple2);font-weight:700">📍 Open in Google Maps</a></div>` : ''}
-        <div class="stars">${starStr(l.rating)} ${l.rating || '—'} <span style="color:var(--muted);font-size:13px">${l.reviews ? l.reviews + ' reviews' : 'No reviews yet'}</span></div>
-        <p style="color:var(--muted);line-height:1.6;margin-top:12px">${esc(l.description || '')}</p>
-        <div class="metrics">
-          <div class="metric"><div class="ml">For</div><div class="mv">${esc(l.gender)}</div></div>
-          <div class="metric"><div class="ml">Available from</div><div class="mv">${esc(fmtDate(l.availableFrom))}</div></div>
-          <div class="metric"><div class="ml">Food</div><div class="mv">${esc(l.foodDetail || (l.foodIncluded ? 'Included' : 'Not included'))}</div></div>
-          <div class="metric"><div class="ml">Starting rent</div><div class="mv">${money(l.startingRent)}/mo</div></div>
-        </div>
-        <div class="sec" style="font-size:16px;margin:18px 0 8px">Amenities</div>
-        <div class="amen">${amen || '<span>—</span>'}</div>
+        ${l.rating ? `<div class="stars">${starStr(l.rating)} ${l.rating} <span style="color:var(--muted);font-size:13px">${l.reviews ? l.reviews + ' reviews' : ''}</span></div>` : ''}
+        ${l.description ? `<p style="color:var(--muted);line-height:1.6;margin-top:12px">${esc(l.description)}</p>` : ''}
+        ${metricsHTML}
+        ${amen ? `<div class="sec" style="font-size:16px;margin:18px 0 8px">Amenities</div><div class="amen">${amen}</div>` : ''}
+        ${costsHTML}
         ${l.rules ? `<div class="sec" style="font-size:16px;margin:18px 0 8px">House rules</div><div style="color:var(--muted);font-size:13px;line-height:1.7">${esc(l.rules)}</div>` : ''}
         ${safetyHTML(l)}
         ${reviewsHTML(l)}
       </div>
       <div>
         <div class="bookbox">
-          <div style="font-weight:800;margin-bottom:12px">Room types <span style="font-size:11px;font-weight:400;color:var(--muted)">(tap to select)</span></div>
-          ${rooms || '<div style="color:var(--muted);font-size:13px">Contact owner for room details.</div>'}
-          <div style="font-size:13px;color:var(--muted);margin:12px 0">Selected: <b id="sel-label">${sr.type ? esc(sr.type) + ' — ' + money(sr.rent) + '/mo' : money(l.startingRent) + '/mo'}</b></div>
+          ${rooms ? `<div style="font-weight:800;margin-bottom:12px">Room types <span style="font-size:11px;font-weight:400;color:var(--muted)">(tap to select)</span></div>${rooms}
+          <div style="font-size:13px;color:var(--muted);margin:12px 0">Selected: <b id="sel-label">${selText}</b></div>` : `<div style="font-size:13px;color:var(--muted);margin-bottom:12px">Contact the owner for room types &amp; pricing.</div>`}
           ${includesHTML}
-          <button class="btn" onclick="openContact()">Contact owner</button>
-          <button class="btn alt" onclick="scheduleVisit()">📅 Schedule a visit</button>
-          ${l.ownerId && (!state.user || state.user.id !== l.ownerId) ? `<button class="btn alt" onclick="messageOwner(${l.ownerId}, ${l.id})">💬 Message owner</button>` : ''}
-          <button class="btn alt" id="save-btn" onclick="toggleSave(${l.id})">${isSaved(l.id) ? '♥ Saved' : '♡ Save'}</button>
-          <div class="note">Phone &amp; WhatsApp · online booking coming soon</div>
+          <button class="btn" onclick="openContact()">📞 Contact owner</button>
+          <div class="secondary-actions">
+            ${mapHref ? `<a class="btn alt" href="${esc(mapHref)}" target="_blank" rel="noopener noreferrer">📍 View on Map</a>` : ''}
+            <button class="btn alt" onclick="scheduleVisit()">📅 Schedule a visit</button>
+            ${canMessage ? `<button class="btn alt" onclick="messageOwner(${l.ownerId}, ${l.id})">💬 Message owner</button>` : ''}
+            <button class="btn alt" id="save-btn" onclick="toggleSave(${l.id})">${isSaved(l.id) ? '♥ Saved' : '♡ Save'}</button>
+          </div>
+          <div class="note">Contact directly by phone or WhatsApp — no brokerage.</div>
         </div>
       </div>
     </div>`;
+
+  // Sticky mobile contact bar
+  const sc = $('sticky-contact');
+  if (sc) {
+    sc.querySelector('.sc-call').onclick = openContact;
+    const wa = sc.querySelector('.sc-wa');
+    if (l.contactWhatsApp) {
+      wa.style.display = '';
+      wa.onclick = () => window.open(`https://wa.me/${l.contactWhatsApp}?text=${encodeURIComponent("Hi, I found " + l.name + " on NestUs and I'm interested.")}`, '_blank');
+    } else wa.style.display = 'none';
+  }
 }
 
 function selRoom(i) {
@@ -452,6 +492,11 @@ async function submitListing() {
     foodIncluded: $('o-food').value === 'true', hasAC: rooms.some(r => r.ac) || amenities.includes('AC'),
     availableFrom: $('o-date').value, amenities, safety,
     mapLink: $('o-maplink').value.trim(),
+    deposit: Number($('o-deposit').value) || 0,
+    depositRefund: $('o-refund').value.trim(),
+    noticePeriod: $('o-notice').value.trim(),
+    electricity: $('o-elec').value,
+    extraCharges: $('o-extra').value.trim(),
     description: $('o-desc').value.trim(), contactPhone: phone, contactWhatsApp: $('o-wa').value.trim(),
     rooms,
     photos: [...state.ownerPhotos],
@@ -476,7 +521,7 @@ async function submitListing() {
 }
 
 function clearOwnerForm() {
-  ['o-name', 'o-area', 'o-college', 'o-address', 'o-phone', 'o-wa', 'o-desc', 'o-maplink', 'sf-checkin', 'sf-checkout'].forEach(id => { if ($(id)) $(id).value = ''; });
+  ['o-name', 'o-area', 'o-college', 'o-address', 'o-phone', 'o-wa', 'o-desc', 'o-maplink', 'sf-checkin', 'sf-checkout', 'o-deposit', 'o-refund', 'o-notice', 'o-elec', 'o-extra'].forEach(id => { if ($(id)) $(id).value = ''; });
   ['sf-guard', 'sf-warden', 'sf-biometric', 'sf-visitors'].forEach(id => { if ($(id)) $(id).checked = false; });
   document.querySelectorAll('#o-amen input').forEach(cb => { cb.checked = cb.value === 'WiFi'; });
   state.ownerPhotos = [];
@@ -702,7 +747,7 @@ function renderCompare(list) {
   const rows = [
     ['', list.map(l => `<div style="font-weight:800">${esc(l.name)}</div><div style="font-size:11px;color:var(--muted)">${listingCode(l.id)}</div>`)],
     ['Photo', list.map(l => (l.photos && l.photos[0]) ? `<div style="width:90px;height:60px;border-radius:8px;background:center/cover url('${encodeURI(l.photos[0])}')"></div>` : '🏠')],
-    ['From', list.map(l => '<b>' + money(l.startingRent) + '</b>/mo')],
+    ['From', list.map(l => l.startingRent ? '<b>' + money(l.startingRent) + '</b>/mo' : 'On request')],
     ['For', list.map(l => esc(l.gender || '—'))],
     ['Food', list.map(l => l.foodIncluded ? '✓ Included' : '—')],
     ['AC', list.map(l => l.hasAC ? '✓' : '—')],
@@ -859,7 +904,7 @@ async function goMap() {
     const c = coordsFor(l);
     pts.push(c);
     L.marker(c).addTo(_mapView).bindPopup(
-      `<b>${esc(l.name)}</b><br>${money(l.startingRent)}/mo · ${esc(l.gender)}<br>` +
+      `<b>${esc(l.name)}</b><br>${rentLabel(l)} · ${esc(l.gender)}<br>` +
       `<a href="#" onclick="closePopupAndOpen(${l.id});return false;">View details →</a>`
     );
   });
@@ -914,7 +959,7 @@ async function loadDashboard() {
       <div class="dash-thumb" style="${photo ? `background-image:url('${photo}')` : ''}">${photo ? '' : '🏠'}</div>
       <div class="dash-main">
         <div class="dn">${esc(l.name)} <span style="font-weight:500;color:var(--muted);font-size:11px">${listingCode(l.id)}</span></div>
-        <div class="dm">${esc(l.area || '')}${l.area ? ', ' : ''}${esc(l.city)} · ${money(l.startingRent)}/mo onwards</div>
+        <div class="dm">${esc(l.area || '')}${l.area ? ', ' : ''}${esc(l.city)} · ${l.startingRent ? money(l.startingRent) + '/mo onwards' : 'Price on request'}</div>
         <span class="statusbadge st-${st}">${st === 'approved' ? '✓ Live' : st === 'pending' ? '⏳ Awaiting review' : 'Rejected'}</span>
         ${avail ? '<span class="statusbadge st-rejected" style="margin-left:6px">Marked full</span>' : ''}
         <div class="dash-acts">
@@ -964,6 +1009,11 @@ async function editListing(id) {
   $('o-area').value = l.area || '';
   $('o-college').value = l.nearCollege || '';
   $('o-address').value = l.address || '';
+  $('o-deposit').value = l.deposit || '';
+  $('o-refund').value = l.depositRefund || '';
+  $('o-notice').value = l.noticePeriod || '';
+  $('o-elec').value = l.electricity || '';
+  $('o-extra').value = l.extraCharges || '';
   $('o-gender').value = l.gender || 'Girls';
   $('o-date').value = l.availableFrom || '';
   $('o-food').value = l.foodIncluded ? 'true' : 'false';
@@ -988,6 +1038,11 @@ async function editListing(id) {
   $('pickmap-status').textContent = state.ownerLat ? `Pin set ✓ (${l.lat}, ${l.lng})` : 'No pin set yet.';
   route('list');
   initPickMap(state.ownerLat, state.ownerLng);
+}
+
+// Register the PWA service worker (installable, faster repeat loads, works on flaky data).
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => navigator.serviceWorker.register('/sw.js').catch(() => {}));
 }
 
 initHome();

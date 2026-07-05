@@ -4,6 +4,14 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>NestUs — Find your hostel or PG</title>
+<meta name="theme-color" content="#3C3489">
+<link rel="icon" href="/favicon.ico" sizes="any">
+<link rel="icon" type="image/png" href="/favicon-32.png">
+<link rel="manifest" href="/manifest.json">
+<link rel="apple-touch-icon" href="/icon-180.png">
+<!-- Google Analytics (GA4) -->
+<script async src="https://www.googletagmanager.com/gtag/js?id=G-RS21LKBK0X"></script>
+<script>window.dataLayer=window.dataLayer||[];function gtag(){dataLayer.push(arguments);}gtag('js',new Date());gtag('config','G-RS21LKBK0X');</script>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
 <link rel="stylesheet" href="/styles.css">
@@ -91,7 +99,7 @@
       </div>
 
       <div style="text-align:center;color:var(--muted);font-size:13px;margin-top:34px;padding-top:18px;border-top:1px solid var(--line)">
-        © 2026 NestUs · nestus.in &nbsp;·&nbsp; <a href="/privacy" style="color:var(--purple2);font-weight:600">Privacy</a> &nbsp;·&nbsp; <a href="/terms" style="color:var(--purple2);font-weight:600">Terms</a> &nbsp;·&nbsp; <a onclick="route('help')" style="color:var(--purple2);font-weight:600;cursor:pointer">Help</a>
+        © 2026 NestUs · nestus.in &nbsp;·&nbsp; <a href="/privacy" style="color:var(--purple2);font-weight:600">Privacy</a> &nbsp;·&nbsp; <a href="/terms" style="color:var(--purple2);font-weight:600">Terms</a> &nbsp;·&nbsp; <a onclick="route('help')" style="color:var(--purple2);font-weight:600;cursor:pointer">Help</a> &nbsp;·&nbsp; <a href="https://instagram.com/nestus_living" target="_blank" rel="noopener" style="color:var(--purple2);font-weight:600">@nestus_living</a><br>📞 <a href="tel:+919322663709" style="color:var(--muted)">+91 93226 63709</a>
       </div>
     </section>
 
@@ -158,9 +166,14 @@
         <h2>Help &amp; support</h2>
         <div class="sub">We're here to help students and owners. Reach us any time.</div>
         <div style="background:var(--light);border-radius:12px;padding:18px;margin-bottom:18px">
-          <div style="font-weight:700;margin-bottom:4px">📧 Email support</div>
-          <a href="mailto:nestus.care@gmail.com" style="color:var(--purple);font-weight:800;font-size:17px">nestus.care@gmail.com</a>
-          <div style="font-size:13px;color:var(--muted);margin-top:6px">We usually reply within a day.</div>
+          <div style="font-weight:700;margin-bottom:8px">📧 Email</div>
+          <a href="mailto:nestus.care@gmail.com" style="color:var(--purple);font-weight:800;font-size:16px">nestus.care@gmail.com</a>
+          <div style="font-weight:700;margin:12px 0 4px">📞 Call / WhatsApp</div>
+          <a href="tel:+919322663709" style="color:var(--purple);font-weight:800;font-size:16px">+91 93226 63709</a>
+          &nbsp;·&nbsp;<a href="https://wa.me/919322663709" target="_blank" rel="noopener" style="color:var(--green);font-weight:700">WhatsApp us</a>
+          <div style="font-weight:700;margin:12px 0 4px">📷 Instagram</div>
+          <a href="https://instagram.com/nestus_living" target="_blank" rel="noopener" style="color:var(--purple);font-weight:800;font-size:16px">@nestus_living</a>
+          <div style="font-size:13px;color:var(--muted);margin-top:10px">We usually reply within a day.</div>
         </div>
         <div class="fsec">Common questions</div>
         <div style="font-size:14px;line-height:1.7;color:#333">
@@ -207,7 +220,7 @@
         </div>
         <div class="row2">
           <div class="field"><label>Area / locality</label><input id="o-area" placeholder="Dharampeth / Vijay Nagar"></div>
-          <div class="field"><label>Near College / Company / Area</label><input id="o-college" placeholder="e.g. VNIT, Infosys, Allen"></div>
+          <div class="field"><label>Near College / Company / Area / Landmark</label><input id="o-college" placeholder="e.g. VNIT, Infosys, Allen — separate multiple with commas"></div>
         </div>
         <div class="field"><label>Full address</label><input id="o-address" placeholder="Building, street, landmark, area, city, pin code"></div>
         <div class="row2">
@@ -215,6 +228,17 @@
           <div class="field"><label>Available from</label><input id="o-date" type="date"></div>
         </div>
         <div class="field"><label>Food</label><select id="o-food"><option value="true">Included</option><option value="false">Not included</option></select></div>
+
+        <div class="fsec">Costs &amp; terms</div>
+        <div class="row2">
+          <div class="field"><label>Security deposit (₹)</label><input id="o-deposit" type="number" placeholder="e.g. 10000"></div>
+          <div class="field"><label>Notice period</label><input id="o-notice" placeholder="e.g. 1 month"></div>
+        </div>
+        <div class="row2">
+          <div class="field"><label>Electricity</label><select id="o-elec"><option value="">Not specified</option><option>Included in rent</option><option>Metered (as used)</option><option>Fixed extra</option></select></div>
+          <div class="field"><label>Deposit refund policy</label><input id="o-refund" placeholder="e.g. Refunded in 30 days, minus damages"></div>
+        </div>
+        <div class="field"><label>Other charges (optional)</label><input id="o-extra" placeholder="e.g. one-time maintenance ₹1000"></div>
 
         <div class="fsec">Room types &amp; pricing</div>
         <div style="font-size:12px;color:var(--muted);margin-bottom:8px">Add each kind of room you offer — e.g. AC and non-AC at different prices.</div>
@@ -354,6 +378,12 @@
     </div>
     <img id="lb-img" src="" alt="">
     <div id="lb-count" class="lb-count"></div>
+  </div>
+
+  <!-- Sticky contact bar (mobile, listing detail only) -->
+  <div id="sticky-contact" class="sticky-contact">
+    <button class="btn sc-call">📞 Contact owner</button>
+    <button class="btn alt sc-wa">💬 WhatsApp</button>
   </div>
 
   <div class="toast" id="toast"></div>

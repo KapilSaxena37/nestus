@@ -2,7 +2,12 @@
 // These are real HTML (crawlable by Google) and link into the SPA via /?listing=ID.
 import { getListings } from './db.js';
 
+const GA = `<script async src="https://www.googletagmanager.com/gtag/js?id=G-RS21LKBK0X"></script>
+<script>window.dataLayer=window.dataLayer||[];function gtag(){dataLayer.push(arguments);}gtag('js',new Date());gtag('config','G-RS21LKBK0X');</script>`;
+
 const slugify = s => String(s || '').toLowerCase().trim().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+// A listing can be near several landmarks (comma/semicolon separated).
+const collegesOf = l => String(l.nearCollege || '').split(/[,;]/).map(s => s.trim()).filter(Boolean);
 const deslug = s => String(s || '').split('-').filter(Boolean).map(w => w[0].toUpperCase() + w.slice(1)).join(' ');
 const esc = s => String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 const money = n => '₹' + Number(n || 0).toLocaleString('en-IN');
@@ -32,6 +37,8 @@ function shell({ title, desc, h1, intro, cardsHTML, crossHTML, count, canonical 
 <meta name="description" content="${esc(desc)}">
 <meta name="robots" content="${robots}">
 <link rel="canonical" href="${esc(canonical || '')}">
+<link rel="icon" href="/favicon.ico" sizes="any">
+${GA}
 <style>
 :root{--p:#3C3489;--p2:#534AB7;--l:#EEEDFE;--g:#0F6E56;--line:#e7e6f0;--mut:#777;}
 *{box-sizing:border-box;margin:0;padding:0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;}
@@ -81,8 +88,8 @@ export async function renderLanding(kind, slug, canonical) {
     desc = `Find verified student hostels and PGs in ${label}. Compare rent, food, AC and safety, and contact owners directly on NestUs.`;
     intro = `Browse ${matched.length} verified hostels and PGs in ${label} for students — with photos, room types, rent and safety details. No brokers, contact owners directly.`;
   } else if (kind === 'near') {
-    matched = all.filter(l => slugify(l.nearCollege) === slug);
-    label = matched[0] ? matched[0].nearCollege : deslug(slug);
+    matched = all.filter(l => collegesOf(l).some(c => slugify(c) === slug));
+    label = deslug(slug);
     h1 = `Hostels & PGs near ${label}`;
     title = `Hostels & PGs near ${label} | NestUs`;
     desc = `Verified student hostels and PGs near ${label}. Walk to class — compare options, prices and safety on NestUs.`;
@@ -98,7 +105,7 @@ export async function renderLanding(kind, slug, canonical) {
 
   // Cross-links from distinct values across all listings.
   const cities = [...new Set(all.map(l => l.city).filter(Boolean))];
-  const colleges = [...new Set(all.map(l => l.nearCollege).filter(Boolean))];
+  const colleges = [...new Set(all.flatMap(collegesOf))];
   const areas = [...new Set(all.map(l => l.area).filter(Boolean))];
   const crossHTML =
     cities.map(c => `<a href="/hostels/${slugify(c)}">Hostels in ${esc(c)}</a>`).join('') +
@@ -203,8 +210,10 @@ export async function renderSitemap(origin) {
     const m = {}; all.forEach(l => { const v = l[key]; if (v) m[v] = (m[v] || 0) + 1; }); return m;
   };
   // Cities are broad — always include. Near/area only when substantial (3+) to avoid thin pages.
+  const collegeCounts = {};
+  all.forEach(l => collegesOf(l).forEach(c => { collegeCounts[c] = (collegeCounts[c] || 0) + 1; }));
   Object.keys(tally('city')).forEach(c => urls.add(`${origin}/hostels/${slugify(c)}`));
-  Object.entries(tally('nearCollege')).forEach(([c, n]) => { if (n >= 3) urls.add(`${origin}/near/${slugify(c)}`); });
+  Object.entries(collegeCounts).forEach(([c, n]) => { if (n >= 3) urls.add(`${origin}/near/${slugify(c)}`); });
   Object.entries(tally('area')).forEach(([a, n]) => { if (n >= 3) urls.add(`${origin}/area/${slugify(a)}`); });
   return `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n` +
     [...urls].map(u => `  <url><loc>${u}</loc></url>`).join('\n') + `\n</urlset>`;

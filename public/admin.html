@@ -255,7 +255,7 @@
         <div class="f"><label>Name</label><input id="e-name" value="${esc(l.name)}"></div>
         <div class="f"><label>City</label><select id="e-city">${CITIES.map(c=>`<option ${c===l.city?'selected':''}>${c}</option>`).join('')}</select></div>
         <div class="f"><label>Area</label><input id="e-area" value="${esc(l.area||'')}"></div>
-        <div class="f"><label>Near College / Company / Area</label><input id="e-col" value="${esc(l.nearCollege||'')}"></div>
+        <div class="f"><label>Near College / Company / Area / Landmark</label><input id="e-col" value="${esc(l.nearCollege||'')}" placeholder="commas for multiple"></div>
         <div class="f"><label>Full address</label><input id="e-address" value="${esc(l.address||'')}"></div>
         <div class="f"><label>For</label><select id="e-gender">${['Girls','Boys','Co-ed'].map(g=>`<option ${g===l.gender?'selected':''}>${g}</option>`).join('')}</select></div>
         <div class="f"><label>Available from</label><input id="e-date" type="date" value="${esc(l.availableFrom||'')}"></div>
@@ -298,6 +298,14 @@
       <div id="edmap" style="height:200px;border-radius:8px;border:1px solid var(--line)"></div>
       <div id="ed-pin" class="kv" style="margin-top:4px">${ed.lat?'Pin: '+ed.lat+', '+ed.lng:'No pin set'}</div>
       <div class="f" style="margin-top:8px"><label>Google Maps link</label><input id="e-map" value="${esc(l.mapLink||'')}"></div>
+      <div style="font-weight:800;color:var(--purple2);margin:14px 0 6px">Costs &amp; terms</div>
+      <div class="editgrid">
+        <div class="f"><label>Deposit (₹)</label><input id="e-deposit" type="number" value="${esc(l.deposit||'')}"></div>
+        <div class="f"><label>Notice period</label><input id="e-notice" value="${esc(l.noticePeriod||'')}"></div>
+        <div class="f"><label>Electricity</label><select id="e-elec"><option value="" ${!l.electricity?'selected':''}>Not specified</option>${['Included in rent','Metered (as used)','Fixed extra'].map(o=>`<option ${l.electricity===o?'selected':''}>${o}</option>`).join('')}</select></div>
+        <div class="f"><label>Deposit refund</label><input id="e-refund" value="${esc(l.depositRefund||'')}"></div>
+        <div class="f"><label>Other charges</label><input id="e-extra" value="${esc(l.extraCharges||'')}"></div>
+      </div>
 
       <button class="approve" style="padding:10px 18px;border-radius:8px;cursor:pointer;margin-top:14px" onclick="saveEdit(${id})">Save all changes</button>
       </div>`;
@@ -385,6 +393,7 @@
       gender:$('e-gender').value,availableFrom:$('e-date').value,foodIncluded:$('e-food').value==='true',foodDetail:$('e-fooddetail').value,
       contactPhone:$('e-phone').value,contactWhatsApp:$('e-wa').value,description:$('e-desc').value,rules:$('e-rules').value,
       amenities,rooms,photos:ed.photos,mapLink:$('e-map').value,
+      deposit:Number($('e-deposit').value)||0,noticePeriod:$('e-notice').value,electricity:$('e-elec').value,depositRefund:$('e-refund').value,extraCharges:$('e-extra').value,
       safety:{guard:$('e-guard').checked,warden:$('e-warden').checked,biometric:$('e-bio').checked,visitorRegister:$('e-visit').checked,checkIn:$('e-checkin').value,checkOut:$('e-checkout').value},
       hasAC:rooms.some(r=>r.ac)||amenities.includes('AC'),
     };
@@ -457,6 +466,7 @@
       const rooms=[];[1,2,3].forEach(n=>{const t=o['room'+n+'Type'],rt=Number(o['room'+n+'Rent']);if(t&&rt>0)rooms.push({type:t,rent:rt,ac:bool(o['room'+n+'AC']),washroom:bool(o['room'+n+'Washroom']),furnished:bool(o['room'+n+'Furnished'])});});
       let rent=Number(o.startingRent)||0;if(!rent&&rooms.length)rent=Math.min(...rooms.map(x=>x.rent));if(!rooms.length&&rent)rooms.push({type:'Standard room',rent});
       return {name:o.name,city:o.city,area:o.area,nearCollege:o.nearCollege,address:o.address||'',gender:o.gender||'Co-ed',startingRent:rent,
+        deposit:Number(o.deposit)||0,depositRefund:o.depositRefund||'',noticePeriod:o.noticePeriod||'',electricity:o.electricity||'',extraCharges:o.extraCharges||'',
         contactPhone:o.contactPhone,contactWhatsApp:o.contactWhatsApp,foodIncluded:bool(o.foodIncluded),foodDetail:o.foodDetail||'',
         amenities:(o.amenities||'').split(';').map(a=>a.trim()).filter(Boolean),availableFrom:o.availableFrom||'',description:o.description||'',rules:o.rules||'',
         mapLink:o.mapLink||'',lat:o.lat?Number(o.lat):undefined,lng:o.lng?Number(o.lng):undefined,

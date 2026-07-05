@@ -25,6 +25,38 @@ const PORT = process.env.PORT || 3000;
 // Simple admin key. Change ADMIN_KEY before deploying.
 const ADMIN_KEY = process.env.ADMIN_KEY || 'nestus-admin';
 
+// --- Email notifications (Brevo). Set these env vars in the host to enable. ---
+const BREVO_API_KEY = process.env.BREVO_API_KEY || '';
+const MAIL_FROM = process.env.MAIL_FROM || 'nestus.care@gmail.com';
+const ADMIN_EMAIL = process.env.ADMIN_EMAIL || 'nestus.care@gmail.com';
+const escHtml = s => String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+async function sendEmail(to, subject, html) {
+  if (!BREVO_API_KEY || !to) return; // silently skip if email not configured
+  try {
+    const r = await fetch('https://api.brevo.com/v3/smtp/email', {
+      method: 'POST',
+      headers: { 'api-key': BREVO_API_KEY, 'Content-Type': 'application/json', accept: 'application/json' },
+      body: JSON.stringify({ sender: { email: MAIL_FROM, name: 'NestUs' }, to: [{ email: to }], subject, htmlContent: html }),
+    });
+    if (!r.ok) console.warn('Brevo email non-OK:', r.status, await r.text());
+  } catch (e) { console.warn('Email send failed:', e.message); }
+}
+async function notifyEnquiry(b) {
+  const subject = `New NestUs enquiry: ${b.listingName || 'a listing'}`;
+  const html = `<p>You have a new enquiry on NestUs.</p>
+    <p><b>Property:</b> ${escHtml(b.listingName || ('#' + b.listingId))}<br>
+    <b>From:</b> ${escHtml(b.name)}<br>
+    <b>Phone:</b> ${escHtml(b.phone)}<br>
+    <b>Message:</b> ${escHtml(b.message || '—')}</p>
+    <p>Reply to the student directly at ${escHtml(b.phone)}.</p>`;
+  await sendEmail(ADMIN_EMAIL, subject, html);                 // always notify NestUs admin
+  const listing = await getListing(b.listingId).catch(() => null);
+  if (listing && listing.ownerId) {
+    const owner = await getUserById(listing.ownerId).catch(() => null);
+    if (owner && owner.email && owner.email !== ADMIN_EMAIL) await sendEmail(owner.email, subject, html);
+  }
+}
+
 const MIME = {
   '.html': 'text/html; charset=utf-8',
   '.js': 'text/javascript; charset=utf-8',
@@ -125,7 +157,10 @@ const server = createServer(async (req, res) => {
         const b = await readBody(req);
         if (!b.listingId || !b.name || !b.phone)
           return send(res, 400, { error: 'Name, phone and listing are required' });
-        return send(res, 201, await addEnquiry(b));
+        const enquiry = await addEnquiry(b);
+        send(res, 201, enquiry);
+        notifyEnquiry(b).catch(() => {}); // fire-and-forget email to admin + owner
+        return;
       }
       // GET /api/cities
       if (path === '/api/cities' && req.method === 'GET') {
@@ -223,7 +258,7 @@ const server = createServer(async (req, res) => {
         const allowed = ['name', 'area', 'nearCollege', 'address', 'distance', 'gender', 'startingRent',
           'foodIncluded', 'foodDetail', 'hasAC', 'availableFrom', 'description', 'amenities',
           'rooms', 'rules', 'contactPhone', 'contactWhatsApp', 'photos', 'available', 'lat', 'lng',
-          'safety', 'mapLink'];
+          'safety', 'mapLink', 'deposit', 'depositRefund', 'noticePeriod', 'electricity', 'extraCharges'];
         const patch = {};
         for (const k of allowed) if (k in b) patch[k] = b[k];
         // A pure availability toggle stays live; real content edits go back for re-verification.
@@ -389,7 +424,7 @@ const server = createServer(async (req, res) => {
         const allowed = ['name', 'area', 'nearCollege', 'address', 'distance', 'city', 'gender', 'startingRent',
           'foodIncluded', 'foodDetail', 'hasAC', 'availableFrom', 'description', 'amenities',
           'rooms', 'rules', 'contactPhone', 'contactWhatsApp', 'photos', 'available', 'lat', 'lng',
-          'safety', 'mapLink'];
+          'safety', 'mapLink', 'deposit', 'depositRefund', 'noticePeriod', 'electricity', 'extraCharges'];
         const patch = {};
         for (const k of allowed) if (k in b) patch[k] = b[k];
         const updated = await updateListing(aum[1], patch);
