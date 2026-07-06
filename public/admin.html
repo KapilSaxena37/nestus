@@ -80,6 +80,18 @@
   const money=n=>'₹'+Number(n||0).toLocaleString('en-IN');
   const esc=s=>String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/"/g,'&quot;');
   const code=id=>'NES-'+String(id).padStart(5,'0');
+  function csvCell(v){ v=String(v==null?'':v); return /[",\n]/.test(v)?'"'+v.replace(/"/g,'""')+'"':v; }
+  function downloadCSV(filename, rows){ const csv=rows.map(r=>r.map(csvCell).join(',')).join('\n'); const blob=new Blob([csv],{type:'text/csv;charset=utf-8'}); const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=filename; document.body.appendChild(a); a.click(); a.remove(); setTimeout(()=>URL.revokeObjectURL(a.href),1500); }
+  function downloadImportedIds(ids){ downloadCSV('imported-ids.csv', [['UID','name','city'], ...ids.map(x=>[code(x.id),x.name,x.city])]); }
+  async function exportAllCSV(){
+    const list=await api('/api/admin/listings');
+    if(!Array.isArray(list)){toast('Could not load listings');return;}
+    const cols=['UID','status','verified','name','city','area','nearCollege','address','gender','startingRent','deposit','depositRefund','noticePeriod','electricity','extraCharges','foodIncluded','amenities','rooms','contactPhone','contactWhatsApp','ownerName','verifiedAt','createdAt'];
+    const rows=[cols];
+    list.forEach(l=>rows.push([code(l.id),stageOf(l).label,l.verified?'yes':'no',l.name,l.city,l.area,l.nearCollege,l.address,l.gender,l.startingRent,l.deposit,l.depositRefund,l.noticePeriod,l.electricity,l.extraCharges,l.foodIncluded?'yes':'no',(l.amenities||[]).join(';'),(l.rooms||[]).map(r=>r.type+':'+r.rent).join(';'),l.contactPhone,l.contactWhatsApp,l.ownerName,l.verifiedAt,l.createdAt]));
+    downloadCSV('nestus-listings-'+new Date().toISOString().slice(0,10)+'.csv', rows);
+    toast('Exported '+list.length+' listings');
+  }
   function toast(m){const t=$('toast');t.textContent=m;t.classList.add('show');clearTimeout(t._t);t._t=setTimeout(()=>t.classList.remove('show'),2500);}
   async function api(path,opts){opts=opts||{};opts.headers=Object.assign({'X-Admin-Key':KEY},opts.headers||{});return fetch(path,opts).then(r=>r.json());}
   function adminFetch(path,opts){opts=opts||{};opts.headers=Object.assign({'X-Admin-Key':KEY},opts.headers||{});return fetch(path,opts);}
@@ -164,6 +176,7 @@
       <div style="display:flex;gap:10px;align-items:center;margin-bottom:12px;flex-wrap:wrap">
         <label style="font-size:13px;font-weight:600"><input type="checkbox" id="selall" onchange="document.querySelectorAll('.sel').forEach(c=>c.checked=this.checked)"> Select all</label>
         <button class="reject" style="padding:8px 14px;border-radius:8px;cursor:pointer" onclick="deleteSelected()">🗑 Delete selected</button>
+        <button class="neutral" style="padding:8px 14px;border-radius:8px;cursor:pointer" onclick="exportAllCSV()">⬇ Export all (CSV)</button>
       </div>
       <div id="all-rows"></div>`;
     renderAllRows();
@@ -496,7 +509,14 @@
       const res=await api('/api/admin/import',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({rows:_parsed,stage})});
       if(res.error){toast(res.error);return;}
       toast(`Imported ${res.created}${res.duplicates?', '+res.duplicates+' dup skipped':''}${res.skipped?', '+res.skipped+' invalid':''}`);
-      _parsed=[];$('imp-preview').innerHTML='';
+      _parsed=[];
+      const ids=res.createdIds||[];
+      $('imp-preview').innerHTML = ids.length ? `
+        <div class="pcard"><h3>✓ Imported ${ids.length} listing(s) — their IDs:</h3>
+        <div class="meta">Copy these for your records.</div>
+        <textarea readonly style="width:100%;min-height:${Math.min(200,20+ids.length*18)}px;border:1px solid var(--line);border-radius:8px;padding:8px;font-family:monospace;font-size:12px">${ids.map(x=>code(x.id)+' — '+x.name+' ('+x.city+')').join('\n')}</textarea>
+        <button class="neutral" style="margin-top:8px;padding:8px 14px;border-radius:8px;cursor:pointer" onclick="downloadImportedIds(${JSON.stringify(ids).replace(/"/g,'&quot;')})">⬇ Download IDs (CSV)</button>
+        </div>` : '<div class="empty">Nothing new imported.</div>';
     }finally{_importing=false;}
   }
 </script>

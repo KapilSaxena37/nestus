@@ -49,6 +49,14 @@ const $ = (id) => document.getElementById(id);
 const api = (path, opts) => fetch(path, opts).then(r => r.json());
 const money = (n) => '₹' + Number(n).toLocaleString('en-IN');
 const rentLabel = (l) => l.startingRent ? money(l.startingRent) + '/mo' : 'Price on request';
+// --- Phone / WhatsApp helpers ---
+const onlyDigits = (s) => String(s || '').replace(/\D/g, '');
+// wa.me needs country code + digits only; assume India (91) for 10-digit numbers.
+function waNumber(num) { const d = onlyDigits(num); if (!d) return ''; return d.length === 10 ? '91' + d : d; }
+function whatsappLink(num, text) { const n = waNumber(num); return n ? `https://wa.me/${n}${text ? '?text=' + encodeURIComponent(text) : ''}` : ''; }
+function phoneNumbers(l) { return String(l.contactPhone || '').split(/[,;/]/).map(s => s.trim()).filter(Boolean); }
+function waSourceOf(l) { return l.contactWhatsApp || phoneNumbers(l)[0] || ''; }
+function telHref(n) { const d = onlyDigits(n); if (!d) return ''; return 'tel:+' + (d.length === 10 ? '91' + d : d); }
 const starStr = (r) => { const f = Math.round(r); return '★★★★★'.slice(0, f) + '☆☆☆☆☆'.slice(0, 5 - f); };
 
 function toast(msg) {
@@ -191,10 +199,25 @@ function renderResultsCards() {
   } else {
     $('results-cards').innerHTML = list.map(cardHTML).join('');
   }
+  renderSuggestions();
 }
 function filterResults() {
   renderResultsCards();
   if ($('results-map').style.display === 'block') renderResultsMap();
+}
+
+// "You may also like" — other properties (same city preferred) not in the current results.
+async function renderSuggestions() {
+  const box = $('results-suggestions'); if (!box) return;
+  if (!state.allApproved) { try { state.allApproved = await api('/api/listings'); } catch { state.allApproved = []; } }
+  const shownIds = new Set((currentResults() || []).map(l => l.id));
+  const city = state.filters && state.filters.city;
+  let pool = (state.allApproved || []).filter(l => !shownIds.has(l.id));
+  if (city) { const same = pool.filter(l => l.city === city); pool = same.length ? same : pool; }
+  pool = pool.slice(0, 6);
+  box.innerHTML = pool.length
+    ? `<div class="sec" style="font-size:18px;margin:30px 0 12px">You may also like</div><div class="cards">${pool.map(cardHTML).join('')}</div>`
+    : '';
 }
 
 function toggleResultsMap() {
@@ -357,15 +380,23 @@ function renderDetail() {
       </div>
     </div>`;
 
-  // Sticky mobile contact bar
+  // Sticky mobile contact bar — Call dials directly; WhatsApp opens the chat.
   const sc = $('sticky-contact');
   if (sc) {
-    sc.querySelector('.sc-call').onclick = openContact;
+    const nums = phoneNumbers(l);
+    const callBtn = sc.querySelector('.sc-call');
+    if (nums.length) {
+      const href = telHref(nums[0]);
+      callBtn.textContent = '📞 Call owner';
+      callBtn.onclick = () => { location.href = href; };
+    } else {
+      callBtn.textContent = '📞 Contact owner';
+      callBtn.onclick = openContact;
+    }
     const wa = sc.querySelector('.sc-wa');
-    if (l.contactWhatsApp) {
-      wa.style.display = '';
-      wa.onclick = () => window.open(`https://wa.me/${l.contactWhatsApp}?text=${encodeURIComponent("Hi, I found " + l.name + " on NestUs and I'm interested.")}`, '_blank');
-    } else wa.style.display = 'none';
+    const waLink = whatsappLink(waSourceOf(l), 'Hi, I found ' + l.name + " on NestUs and I'm interested.");
+    if (waLink) { wa.style.display = ''; wa.onclick = () => window.open(waLink, '_blank'); }
+    else wa.style.display = 'none';
   }
 }
 
@@ -439,12 +470,17 @@ function openContact() {
   const l = state.currentListing;
   $('modal-form').style.display = 'block';
   $('modal-ok').style.display = 'none';
-  $('modal-sub').textContent = `Send your details to ${l.name}, or reach them directly.`;
-  $('modal-phone').textContent = l.contactPhone ? '📞 ' + l.contactPhone : '';
+  $('modal-sub').textContent = `Call ${l.name} directly, message on WhatsApp, or send your details below.`;
+  // Clickable call links — one per number (owners can list several).
+  const nums = phoneNumbers(l);
+  $('modal-phone').innerHTML = nums.length
+    ? nums.map(n => `<a href="${telHref(n)}" class="calllink">📞 Call ${esc(n)}</a>`).join('')
+    : '';
   const wa = $('wa-btn');
-  if (l.contactWhatsApp) {
+  const waLink = whatsappLink(waSourceOf(l), 'Hi, I found ' + l.name + " on NestUs and I'm interested.");
+  if (waLink) {
     wa.style.display = 'block';
-    wa.onclick = () => window.open(`https://wa.me/${l.contactWhatsApp}?text=${encodeURIComponent('Hi, I found ' + l.name + ' on NestUs and I\'m interested.')}`, '_blank');
+    wa.onclick = () => window.open(waLink, '_blank');
   } else wa.style.display = 'none';
   $('modal').classList.add('show');
 }

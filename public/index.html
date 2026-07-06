@@ -99,7 +99,7 @@
       </div>
 
       <div style="text-align:center;color:var(--muted);font-size:13px;margin-top:34px;padding-top:18px;border-top:1px solid var(--line)">
-        © 2026 NestUs · nestus.in &nbsp;·&nbsp; <a href="/privacy" style="color:var(--purple2);font-weight:600">Privacy</a> &nbsp;·&nbsp; <a href="/terms" style="color:var(--purple2);font-weight:600">Terms</a> &nbsp;·&nbsp; <a onclick="route('help')" style="color:var(--purple2);font-weight:600;cursor:pointer">Help</a> &nbsp;·&nbsp; <a href="https://instagram.com/nestus_living" target="_blank" rel="noopener" style="color:var(--purple2);font-weight:600">@nestus_living</a><br>📞 <a href="tel:+919322663709" style="color:var(--muted)">+91 93226 63709</a>
+        © 2026 NestUs · nestus.in &nbsp;·&nbsp; <a href="/privacy" style="color:var(--purple2);font-weight:600">Privacy</a> &nbsp;·&nbsp; <a href="/terms" style="color:var(--purple2);font-weight:600">Terms</a> &nbsp;·&nbsp; <a onclick="route('help')" style="color:var(--purple2);font-weight:600;cursor:pointer">Help</a> &nbsp;·&nbsp; <a href="https://instagram.com/nestus_living" target="_blank" rel="noopener" style="color:var(--purple2);font-weight:600">📷 @nestus_living</a> &nbsp;·&nbsp; <a href="https://wa.me/919322663709" target="_blank" rel="noopener" style="color:#25D366;font-weight:700">💬 WhatsApp</a><br>📞 <a href="tel:+919322663709" style="color:var(--muted)">+91 93226 63709</a>
       </div>
     </section>
 
@@ -130,6 +130,7 @@
       </div>
       <div id="results-map" style="display:none;height:340px;border-radius:14px;overflow:hidden;border:1px solid var(--line);margin-bottom:16px"></div>
       <div class="cards" id="results-cards"></div>
+      <div id="results-suggestions"></div>
     </section>
 
     <!-- DETAIL -->
@@ -293,7 +294,7 @@
 
         <div class="fsec">Contact &amp; description</div>
         <div class="row2">
-          <div class="field"><label>Contact phone *</label><input id="o-phone" placeholder="+91 ..."></div>
+          <div class="field"><label>Contact number(s) *</label><input id="o-phone" placeholder="+91 ... — separate multiple with commas"></div>
           <div class="field"><label>WhatsApp number</label><input id="o-wa" placeholder="91XXXXXXXXXX"></div>
         </div>
         <div class="field"><label>Description</label><textarea id="o-desc" placeholder="Location highlights, nearby colleges, rules, what makes it special..."></textarea></div>
@@ -310,12 +311,13 @@
       <div id="modal-form">
         <h3>Contact the owner</h3>
         <p class="s" id="modal-sub"></p>
+        <div id="modal-phone"></div>
+        <button class="btn wa-green" id="wa-btn" style="margin-top:0">💬 Chat on WhatsApp</button>
+        <div style="text-align:center;color:var(--muted);font-size:12px;margin:12px 0 8px">— or send an enquiry —</div>
         <div class="field"><label>Your name *</label><input id="e-name"></div>
         <div class="field"><label>Your phone *</label><input id="e-phone"></div>
         <div class="field"><label>Message</label><textarea id="e-msg" placeholder="Hi, I'm interested in a room. Is it available?"></textarea></div>
-        <button class="btn" onclick="sendEnquiry()">Send enquiry</button>
-        <button class="btn alt" id="wa-btn">Chat on WhatsApp</button>
-        <div class="note" id="modal-phone"></div>
+        <button class="btn alt" onclick="sendEnquiry()">Send enquiry</button>
         <button class="back" style="margin-top:10px;display:block" onclick="closeModal()">Cancel</button>
       </div>
       <div id="modal-ok" style="display:none" class="ok">
@@ -383,7 +385,7 @@
   <!-- Sticky contact bar (mobile, listing detail only) -->
   <div id="sticky-contact" class="sticky-contact">
     <button class="btn sc-call">📞 Contact owner</button>
-    <button class="btn alt sc-wa">💬 WhatsApp</button>
+    <button class="btn wa-green sc-wa">💬 WhatsApp</button>
   </div>
 
   <div class="toast" id="toast"></div>

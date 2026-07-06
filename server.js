@@ -439,6 +439,7 @@ const server = createServer(async (req, res) => {
         const seen = new Set(existing.map(l => `${(l.name || '').toLowerCase().trim()}|${(l.city || '').toLowerCase().trim()}`));
         const stage = b.stage || 'draft'; // raw drafts by default
         let created = 0, skipped = 0, duplicates = 0;
+        const createdIds = [];
         for (const r of rows) {
           if (!r.name || !r.city) { skipped++; continue; }
           const key = `${r.name.toLowerCase().trim()}|${r.city.toLowerCase().trim()}`;
@@ -449,8 +450,9 @@ const server = createServer(async (req, res) => {
           else if (stage === 'unverified') await updateListing(listing.id, { status: 'approved', verified: false });
           else await updateListing(listing.id, { status: 'draft' }); // raw, not public
           created++;
+          createdIds.push({ id: listing.id, name: r.name, city: r.city });
         }
-        return send(res, 200, { created, skipped, duplicates });
+        return send(res, 200, { created, skipped, duplicates, createdIds });
       }
       // Delete a single listing.
       const adm = path.match(/^\/api\/admin\/listings\/(\d+)\/delete$/);
