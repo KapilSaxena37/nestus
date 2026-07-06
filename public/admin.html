@@ -92,6 +92,27 @@
     downloadCSV('nestus-listings-'+new Date().toISOString().slice(0,10)+'.csv', rows);
     toast('Exported '+list.length+' listings');
   }
+  // Popup detailing exactly what an import committed vs skipped.
+  function showImportSummary(res){
+    const ids=res.createdIds||[], dups=res.duplicateList||[], inv=res.invalidList||[];
+    const wrap=document.createElement('div');
+    wrap.className='modal-bg show'; wrap.style.zIndex='95';
+    wrap.innerHTML=`<div class="modal" style="max-width:540px;max-height:84vh;overflow:auto">
+      <h3 style="font-size:18px;margin-bottom:4px">Import summary</h3>
+      <p class="s" style="color:var(--muted);font-size:13px;margin-bottom:12px">Exactly what was committed and what was skipped.</p>
+      <div class="pcard" style="border-color:#cdebd9;background:#f2fbf6;margin-bottom:10px">
+        <b style="color:var(--green)">✓ Imported: ${ids.length}</b>
+        ${ids.length?`<div style="max-height:150px;overflow:auto;margin-top:6px">${ids.map(x=>`<div class="kv">${code(x.id)} — ${esc(x.name)} (${esc(x.city)})</div>`).join('')}</div>
+        <button class="neutral" style="margin-top:8px;padding:7px 12px;border-radius:8px;cursor:pointer" onclick="downloadImportedIds(${JSON.stringify(ids).replace(/"/g,'&quot;')})">⬇ Download IDs (CSV)</button>`:''}
+      </div>
+      ${dups.length?`<div class="pcard" style="border-color:#f0d9a0;background:#fff8ec;margin-bottom:10px"><b style="color:#9a6a00">⚠ Skipped ${dups.length} duplicate(s)</b><div class="meta">Already existed (same name + city) — NOT added.</div><div style="max-height:140px;overflow:auto">${dups.map(d=>`<div class="kv">• ${esc(d)}</div>`).join('')}</div></div>`:''}
+      ${inv.length?`<div class="pcard" style="border-color:#e0b4b4;background:#fff7f7;margin-bottom:10px"><b style="color:#b00">⚠ Skipped ${inv.length} invalid row(s)</b><div class="meta">Missing name or city.</div><div style="max-height:120px;overflow:auto">${inv.map(d=>`<div class="kv">• ${esc(d)}</div>`).join('')}</div></div>`:''}
+      <button style="width:100%;background:var(--purple2);color:#fff;border:none;padding:11px;border-radius:10px;font-weight:800;cursor:pointer" onclick="this.closest('.modal-bg').remove()">Done</button>
+    </div>`;
+    wrap.addEventListener('click',e=>{ if(e.target===wrap) wrap.remove(); });
+    document.body.appendChild(wrap);
+    $('imp-preview').innerHTML='';
+  }
   function toast(m){const t=$('toast');t.textContent=m;t.classList.add('show');clearTimeout(t._t);t._t=setTimeout(()=>t.classList.remove('show'),2500);}
   async function api(path,opts){opts=opts||{};opts.headers=Object.assign({'X-Admin-Key':KEY},opts.headers||{});return fetch(path,opts).then(r=>r.json());}
   function adminFetch(path,opts){opts=opts||{};opts.headers=Object.assign({'X-Admin-Key':KEY},opts.headers||{});return fetch(path,opts);}
@@ -510,13 +531,7 @@
       if(res.error){toast(res.error);return;}
       toast(`Imported ${res.created}${res.duplicates?', '+res.duplicates+' dup skipped':''}${res.skipped?', '+res.skipped+' invalid':''}`);
       _parsed=[];
-      const ids=res.createdIds||[];
-      $('imp-preview').innerHTML = ids.length ? `
-        <div class="pcard"><h3>✓ Imported ${ids.length} listing(s) — their IDs:</h3>
-        <div class="meta">Copy these for your records.</div>
-        <textarea readonly style="width:100%;min-height:${Math.min(200,20+ids.length*18)}px;border:1px solid var(--line);border-radius:8px;padding:8px;font-family:monospace;font-size:12px">${ids.map(x=>code(x.id)+' — '+x.name+' ('+x.city+')').join('\n')}</textarea>
-        <button class="neutral" style="margin-top:8px;padding:8px 14px;border-radius:8px;cursor:pointer" onclick="downloadImportedIds(${JSON.stringify(ids).replace(/"/g,'&quot;')})">⬇ Download IDs (CSV)</button>
-        </div>` : '<div class="empty">Nothing new imported.</div>';
+      showImportSummary(res);
     }finally{_importing=false;}
   }
 </script>

@@ -103,8 +103,8 @@ a{color:inherit;text-decoration:none;}
 .secondary-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px;}
 .secondary-actions .btn.alt{flex:1;min-width:118px;margin-top:0;padding:11px;text-align:center;text-decoration:none;display:inline-flex;align-items:center;justify-content:center;}
 .sticky-contact{display:none;position:fixed;left:0;right:0;bottom:0;background:#fff;border-top:1px solid var(--line);padding:9px 12px;gap:10px;z-index:70;box-shadow:0 -4px 20px rgba(0,0,0,.1);}
-.sticky-contact.show{display:flex;}
-.sticky-contact .btn{margin:0;flex:1;padding:13px;}
+.sticky-contact.show{display:flex;align-items:stretch;}
+.sticky-contact .btn{margin:0!important;flex:1 1 0;width:auto;padding:13px 10px;font-size:15px;line-height:1.2;display:inline-flex;align-items:center;justify-content:center;}
 @media(min-width:761px){.sticky-contact.show{display:none;}}
 .roomrow{border:1px solid var(--line);border-radius:10px;padding:12px;margin-bottom:8px;cursor:pointer;display:flex;justify-content:space-between;align-items:center;gap:10px;transition:.15s;}
 .roomrow:hover{border-color:var(--lilac);}

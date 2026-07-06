@@ -439,11 +439,11 @@ const server = createServer(async (req, res) => {
         const seen = new Set(existing.map(l => `${(l.name || '').toLowerCase().trim()}|${(l.city || '').toLowerCase().trim()}`));
         const stage = b.stage || 'draft'; // raw drafts by default
         let created = 0, skipped = 0, duplicates = 0;
-        const createdIds = [];
+        const createdIds = [], duplicateList = [], invalidList = [];
         for (const r of rows) {
-          if (!r.name || !r.city) { skipped++; continue; }
+          if (!r.name || !r.city) { skipped++; invalidList.push((r.name || '(no name)') + (r.city ? ' — ' + r.city : ' — no city')); continue; }
           const key = `${r.name.toLowerCase().trim()}|${r.city.toLowerCase().trim()}`;
-          if (seen.has(key)) { duplicates++; continue; } // skip duplicates (prevents re-import multiplying rows)
+          if (seen.has(key)) { duplicates++; duplicateList.push(`${r.name} (${r.city})`); continue; } // skip duplicates
           seen.add(key);
           const listing = await addListing(r);
           if (stage === 'verified') await updateListing(listing.id, { status: 'approved', verified: true, verifiedAt: new Date().toISOString() });
@@ -452,7 +452,7 @@ const server = createServer(async (req, res) => {
           created++;
           createdIds.push({ id: listing.id, name: r.name, city: r.city });
         }
-        return send(res, 200, { created, skipped, duplicates, createdIds });
+        return send(res, 200, { created, skipped, duplicates, createdIds, duplicateList, invalidList });
       }
       // Delete a single listing.
       const adm = path.match(/^\/api\/admin\/listings\/(\d+)\/delete$/);
