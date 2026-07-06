@@ -454,6 +454,26 @@ const server = createServer(async (req, res) => {
         }
         return send(res, 200, { created, skipped, duplicates, createdIds, duplicateList, invalidList });
       }
+      // Bulk update existing listings (match by UID/id). Only provided fields change.
+      if (path === '/api/admin/bulk-update' && req.method === 'POST') {
+        if (!authed) return send(res, 401, { error: 'Unauthorized' });
+        const b = await readBody(req);
+        const rows = Array.isArray(b.rows) ? b.rows : [];
+        const allowed = ['name', 'area', 'nearCollege', 'address', 'city', 'gender', 'startingRent',
+          'foodIncluded', 'foodDetail', 'hasAC', 'availableFrom', 'description', 'amenities',
+          'rooms', 'rules', 'contactPhone', 'contactWhatsApp', 'photos', 'lat', 'lng',
+          'deposit', 'depositRefund', 'noticePeriod', 'electricity', 'extraCharges', 'mapLink'];
+        let updated = 0; const notFound = [];
+        for (const row of rows) {
+          const id = Number(row.uid);
+          if (!id) { notFound.push('(no uid)'); continue; }
+          const patch = {};
+          for (const k of allowed) if (row.patch && k in row.patch) patch[k] = row.patch[k];
+          const r = await updateListing(id, patch);
+          if (r) updated++; else notFound.push('NES-' + String(id).padStart(5, '0'));
+        }
+        return send(res, 200, { updated, notFound });
+      }
       // Delete a single listing.
       const adm = path.match(/^\/api\/admin\/listings\/(\d+)\/delete$/);
       if (adm && req.method === 'POST') {

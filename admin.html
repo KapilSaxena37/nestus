@@ -1,0 +1,612 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="robots" content="noindex,nofollow">
+<title>NestUs — Admin</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<link rel="stylesheet" href="/styles.css">
+<style>
+  .admin-wrap{max-width:960px;margin:0 auto;padding:24px 18px 60px;}
+  .keybar{background:#fff;border:1px solid var(--line);border-radius:12px;padding:16px;display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:20px;}
+  .keybar input{flex:1;min-width:180px;border:1px solid var(--line);border-radius:8px;padding:10px;}
+  .keybar button{background:var(--purple2);color:#fff;border:none;padding:10px 18px;border-radius:8px;font-weight:700;cursor:pointer;}
+  .tabs{display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap;}
+  .tabs button{border:1px solid var(--line);background:#fff;padding:8px 16px;border-radius:20px;font-weight:600;cursor:pointer;color:var(--muted);}
+  .tabs button.on{background:var(--purple2);color:#fff;border-color:var(--purple2);}
+  .pcard{background:#fff;border:1px solid var(--line);border-radius:14px;padding:16px;margin-bottom:12px;}
+  .pcard h3{font-size:16px;font-weight:800;}
+  .pcard .meta{color:var(--muted);font-size:13px;margin:4px 0 10px;}
+  .acts{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;}
+  .acts button{border:none;padding:8px 14px;border-radius:8px;font-weight:700;cursor:pointer;font-size:13px;}
+  .approve{background:var(--green);color:#fff;}
+  .reject{background:#fff;color:#b00;border:1.5px solid #e0b4b4;}
+  .neutral{background:#fff;color:var(--purple2);border:1.5px solid var(--purple2);}
+  .statgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:12px;margin-bottom:16px;}
+  .statbox{background:#fff;border:1px solid var(--line);border-radius:14px;padding:16px;text-align:center;}
+  .statbox .n{font-size:26px;font-weight:800;color:var(--purple2);}
+  .statbox .l{font-size:12px;color:var(--muted);margin-top:4px;}
+  .detail-toggle{cursor:pointer;color:var(--purple2);font-weight:700;font-size:13px;}
+  .kv{font-size:13px;margin:3px 0;} .kv b{color:var(--ink);}
+  .editgrid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:10px;}
+  .f label{font-size:11px;color:var(--muted);display:block;margin-bottom:3px;}
+  .f input,.f select,.f textarea{width:100%;border:1px solid var(--line);border-radius:8px;padding:8px;font-size:13px;}
+  .filterbar{display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;}
+  .filterbar button{border:1px solid var(--line);background:#fff;padding:6px 12px;border-radius:16px;font-size:12px;font-weight:600;cursor:pointer;color:var(--muted);}
+  .filterbar button.on{background:var(--purple);color:#fff;border-color:var(--purple);}
+  .st{display:inline-block;font-size:11px;font-weight:700;padding:3px 9px;border-radius:20px;}
+  .st.approved{background:#e2f3ec;color:var(--green);}.st.pending{background:#fdf1dc;color:#9a6a00;}.st.rejected{background:#fae3e3;color:#b00;}.st.unv{background:#e7e4fb;color:#3C3489;}
+  .imp textarea{width:100%;min-height:90px;border:1px solid var(--line);border-radius:10px;padding:10px;font-size:13px;font-family:monospace;}
+  .thumb{width:70px;height:54px;object-fit:cover;border-radius:8px;margin:2px;}
+  .pp{position:relative;display:inline-block;margin:2px;}
+  .pp button{position:absolute;top:1px;right:1px;background:rgba(0,0,0,.6);color:#fff;border:none;border-radius:50%;width:18px;height:18px;font-size:11px;cursor:pointer;}
+  .roomedit{border:1px solid var(--line);border-radius:8px;padding:10px;margin-bottom:8px;background:#fafaff;}
+  .checks{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin:6px 0;font-size:13px;}
+  .checks label{display:flex;align-items:center;gap:6px;}
+</style>
+</head>
+<body>
+  <div class="nav">
+    <div class="brand"><a href="/">Nest<span style="color:#c9c3f7">Us</span></a> <span style="font-size:13px;font-weight:500;opacity:.8">Admin</span></div>
+    <div class="navlinks"><a href="/">← Back to site</a></div>
+  </div>
+
+  <div class="admin-wrap">
+    <div class="keybar">
+      <span style="font-weight:700">Admin key:</span>
+      <input id="key" type="password" placeholder="Enter admin key" onkeydown="if(event.key==='Enter')connect()">
+      <button onclick="connect()">Connect</button>
+    </div>
+    <div id="panel" style="display:none">
+      <div class="tabs">
+        <button id="tab-dash" class="on" onclick="show('dash')">📊 Dashboard</button>
+        <button id="tab-all" onclick="show('all')">All listings</button>
+        <button id="tab-enq" onclick="show('enq')">Enquiries</button>
+        <button id="tab-users" onclick="show('users')">Users</button>
+        <button id="tab-import" onclick="show('import')">Import CSV</button>
+      </div>
+      <div id="content"></div>
+    </div>
+  </div>
+  <div class="toast" id="toast"></div>
+<script>
+  const CITIES = ['Nagpur','Indore','Pune','Bhopal','Kota'];
+  const CITY_COORDS = {Nagpur:[21.1458,79.0882],Indore:[22.7196,75.8577],Pune:[18.5204,73.8567],Bhopal:[23.2599,77.4126],Kota:[25.2138,75.8648]};
+  const AMEN = ['WiFi','CCTV','Laundry','Washing machine','Water purifier','Fridge','TV','Geyser','Parking','Power backup','AC','Housekeeping','Study room','Lift'];
+  let KEY='';
+  const $=id=>document.getElementById(id);
+  const money=n=>'₹'+Number(n||0).toLocaleString('en-IN');
+  const esc=s=>String(s==null?'':s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/"/g,'&quot;');
+  const code=id=>'NES-'+String(id).padStart(5,'0');
+  function csvCell(v){ v=String(v==null?'':v); return /[",\n]/.test(v)?'"'+v.replace(/"/g,'""')+'"':v; }
+  function downloadCSV(filename, rows){ const csv=rows.map(r=>r.map(csvCell).join(',')).join('\n'); const blob=new Blob([csv],{type:'text/csv;charset=utf-8'}); const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=filename; document.body.appendChild(a); a.click(); a.remove(); setTimeout(()=>URL.revokeObjectURL(a.href),1500); }
+  function downloadImportedIds(ids){ downloadCSV('imported-ids.csv', [['UID','name','city'], ...ids.map(x=>[code(x.id),x.name,x.city])]); }
+  async function exportAllCSV(){
+    const list=await api('/api/admin/listings');
+    if(!Array.isArray(list)){toast('Could not load listings');return;}
+    const cols=['UID','status','verified','name','city','area','nearCollege','address','gender','startingRent','deposit','depositRefund','noticePeriod','electricity','extraCharges','foodIncluded','amenities','rooms','contactPhone','contactWhatsApp','ownerName','verifiedAt','createdAt'];
+    const rows=[cols];
+    list.forEach(l=>rows.push([code(l.id),stageOf(l).label,l.verified?'yes':'no',l.name,l.city,l.area,l.nearCollege,l.address,l.gender,l.startingRent,l.deposit,l.depositRefund,l.noticePeriod,l.electricity,l.extraCharges,l.foodIncluded?'yes':'no',(l.amenities||[]).join(';'),(l.rooms||[]).map(r=>r.type+':'+r.rent).join(';'),l.contactPhone,l.contactWhatsApp,l.ownerName,l.verifiedAt,l.createdAt]));
+    downloadCSV('nestus-listings-'+new Date().toISOString().slice(0,10)+'.csv', rows);
+    toast('Exported '+list.length+' listings');
+  }
+  // Popup detailing exactly what an import committed vs skipped.
+  function showImportSummary(res){
+    const ids=res.createdIds||[], dups=res.duplicateList||[], inv=res.invalidList||[];
+    const wrap=document.createElement('div');
+    wrap.className='modal-bg show'; wrap.style.zIndex='95';
+    wrap.innerHTML=`<div class="modal" style="max-width:540px;max-height:84vh;overflow:auto">
+      <h3 style="font-size:18px;margin-bottom:4px">Import summary</h3>
+      <p class="s" style="color:var(--muted);font-size:13px;margin-bottom:12px">Exactly what was committed and what was skipped.</p>
+      <div class="pcard" style="border-color:#cdebd9;background:#f2fbf6;margin-bottom:10px">
+        <b style="color:var(--green)">✓ Imported: ${ids.length}</b>
+        ${ids.length?`<div style="max-height:150px;overflow:auto;margin-top:6px">${ids.map(x=>`<div class="kv">${code(x.id)} — ${esc(x.name)} (${esc(x.city)})</div>`).join('')}</div>
+        <button class="neutral" style="margin-top:8px;padding:7px 12px;border-radius:8px;cursor:pointer" onclick="downloadImportedIds(${JSON.stringify(ids).replace(/"/g,'&quot;')})">⬇ Download IDs (CSV)</button>`:''}
+      </div>
+      ${dups.length?`<div class="pcard" style="border-color:#f0d9a0;background:#fff8ec;margin-bottom:10px"><b style="color:#9a6a00">⚠ Skipped ${dups.length} duplicate(s)</b><div class="meta">Already existed (same name + city) — NOT added.</div><div style="max-height:140px;overflow:auto">${dups.map(d=>`<div class="kv">• ${esc(d)}</div>`).join('')}</div></div>`:''}
+      ${inv.length?`<div class="pcard" style="border-color:#e0b4b4;background:#fff7f7;margin-bottom:10px"><b style="color:#b00">⚠ Skipped ${inv.length} invalid row(s)</b><div class="meta">Missing name or city.</div><div style="max-height:120px;overflow:auto">${inv.map(d=>`<div class="kv">• ${esc(d)}</div>`).join('')}</div></div>`:''}
+      <button style="width:100%;background:var(--purple2);color:#fff;border:none;padding:11px;border-radius:10px;font-weight:800;cursor:pointer" onclick="this.closest('.modal-bg').remove()">Done</button>
+    </div>`;
+    wrap.addEventListener('click',e=>{ if(e.target===wrap) wrap.remove(); });
+    document.body.appendChild(wrap);
+    $('imp-preview').innerHTML='';
+  }
+  function toast(m){const t=$('toast');t.textContent=m;t.classList.add('show');clearTimeout(t._t);t._t=setTimeout(()=>t.classList.remove('show'),2500);}
+  async function api(path,opts){opts=opts||{};opts.headers=Object.assign({'X-Admin-Key':KEY},opts.headers||{});return fetch(path,opts).then(r=>r.json());}
+  function adminFetch(path,opts){opts=opts||{};opts.headers=Object.assign({'X-Admin-Key':KEY},opts.headers||{});return fetch(path,opts);}
+  function ago(iso){if(!iso)return '—';const d=(Date.now()-new Date(iso))/86400000;if(d<1)return 'today';if(d<2)return 'yesterday';return Math.floor(d)+' days ago';}
+  function dt(iso){try{return new Date(iso).toLocaleString('en-IN');}catch{return iso||'—';}}
+
+  function stageOf(l){
+    const s=l.status||'pending';
+    if(s==='draft')return {key:'raw',label:'Raw (not live)',cls:'pending'};
+    if(s==='pending')return {key:'pending',label:'Pending',cls:'pending'};
+    if(s==='rejected')return {key:'rejected',label:'Rejected',cls:'rejected'};
+    if(s==='approved'&&l.verified)return {key:'verified',label:'✓ Verified',cls:'approved'};
+    return {key:'unverified',label:'Live · Unverified',cls:'unv'};
+  }
+
+  async function connect(){
+    KEY=$('key').value.trim();
+    const r=await fetch('/api/admin/stats',{headers:{'X-Admin-Key':KEY}});
+    if(r.status===401){toast('Wrong admin key');return;}
+    $('panel').style.display='block';show('dash');
+  }
+  function show(t){
+    ['dash','all','enq','users','import'].forEach(x=>$('tab-'+x).classList.toggle('on',x===t));
+    ({dash:loadDash,all:loadAll,enq:loadEnq,users:loadUsers,import:loadImport})[t]();
+  }
+
+  // ---- Dashboard ----
+  async function loadDash(){
+    const s=await api('/api/admin/stats');
+    const cities=Object.entries(s.byCity||{}).map(([c,n])=>`${c}: ${n}`).join(' · ')||'—';
+    $('content').innerHTML=`
+      <div class="statgrid">
+        <div class="statbox"><div class="n">${s.total}</div><div class="l">Total</div></div>
+        <div class="statbox"><div class="n" style="color:#9a6a00">${s.raw||0}</div><div class="l">Raw (not live)</div></div>
+        <div class="statbox"><div class="n" style="color:#3C3489">${s.unverified||0}</div><div class="l">Live · Unverified</div></div>
+        <div class="statbox"><div class="n" style="color:var(--green)">${s.verified||0}</div><div class="l">Verified</div></div>
+        <div class="statbox"><div class="n">${s.pending||0}</div><div class="l">Owner pending</div></div>
+        <div class="statbox"><div class="n" style="color:#b00">${s.rejected}</div><div class="l">Rejected</div></div>
+      </div>
+      <div class="pcard">
+        <div class="kv"><b>Last verification:</b> ${dt(s.lastVerifiedAt)} (${ago(s.lastVerifiedAt)})</div>
+        <div class="kv"><b>Rooms available / full:</b> ${s.available} / ${s.full}</div>
+        <div class="kv"><b>By city:</b> ${cities}</div>
+        <button class="neutral" style="margin-top:10px;padding:8px 14px;border-radius:8px;cursor:pointer" onclick="cleanColleges()">🧹 Tidy college names (for SEO)</button>
+        <div style="font-size:12px;color:var(--muted);margin-top:4px">Strips distances like "1.5 km" out of the nearby-college field so landing pages group cleanly.</div>
+      </div>
+      ${(s.duplicates&&s.duplicates.length)?`
+        <div class="pcard" style="border-color:#e0b4b4;background:#fff7f7">
+          <h3 style="color:#b00">⚠ Possible duplicates (${s.duplicates.length})</h3>
+          ${s.duplicates.map(g=>`<div class="kv">• <b>${esc(g[0].name)}</b> (${esc(g[0].city)}) — ${g.length} copies: ${g.map(x=>code(x.id)).join(', ')}</div>`).join('')}
+          <button class="neutral" style="margin-top:10px;padding:8px 14px;border-radius:8px;cursor:pointer" onclick="show('all')">Clean up →</button>
+        </div>`:''}`;
+  }
+
+  async function cleanColleges(){
+    if(!confirm('Tidy nearby-college names across all listings? This strips trailing distances (e.g. "1.5 km").'))return;
+    const res=await api('/api/admin/clean-colleges',{method:'POST'});
+    toast(`Tidied ${res.cleaned||0} listing(s)`); loadDash();
+  }
+
+  // ---- All listings ----
+  let _all=[],_filter='all',_search='';
+  async function loadAll(){_all=await api('/api/admin/listings');renderAll();}
+  function setFilter(f){_filter=f;document.querySelectorAll('#all-filterbar button').forEach(b=>b.classList.toggle('on',b.dataset.f===f));renderAllRows();}
+  function matchFilter(l,f){
+    const k=stageOf(l).key;
+    if(f==='all')return true;
+    if(f==='review')return k==='raw'||k==='pending';
+    return k===f;
+  }
+  function matchSearch(l){
+    if(!_search)return true;
+    const q=_search.toLowerCase();
+    return [l.name,code(l.id),l.city,l.area,l.nearCollege,l.address,l.ownerName,l.contactPhone].some(v=>String(v||'').toLowerCase().includes(q));
+  }
+  function renderAll(){
+    const counts=f=>_all.filter(l=>matchFilter(l,f)).length;
+    const tabs=[['all','All'],['review','To review'],['unverified','Unverified'],['verified','Verified'],['rejected','Rejected']];
+    $('content').innerHTML=`
+      <input id="all-search" value="${esc(_search)}" placeholder="🔍 Search name, ID, city, area, owner, phone…" oninput="_search=this.value;renderAllRows()" style="width:100%;border:1px solid var(--line);border-radius:10px;padding:10px;font-size:14px;margin-bottom:12px">
+      <div class="filterbar" id="all-filterbar">${tabs.map(([f,n])=>`<button data-f="${f}" class="${_filter===f?'on':''}" onclick="setFilter('${f}')">${n} (${counts(f)})</button>`).join('')}</div>
+      <div style="display:flex;gap:10px;align-items:center;margin-bottom:12px;flex-wrap:wrap">
+        <label style="font-size:13px;font-weight:600"><input type="checkbox" id="selall" onchange="document.querySelectorAll('.sel').forEach(c=>c.checked=this.checked)"> Select all</label>
+        <button class="reject" style="padding:8px 14px;border-radius:8px;cursor:pointer" onclick="deleteSelected()">🗑 Delete selected</button>
+        <button class="neutral" style="padding:8px 14px;border-radius:8px;cursor:pointer" onclick="exportAllCSV()">⬇ Export all (CSV)</button>
+      </div>
+      <div id="all-rows"></div>`;
+    renderAllRows();
+  }
+  function renderAllRows(){
+    const list=_all.filter(l=>matchFilter(l,_filter)&&matchSearch(l));
+    $('all-rows').innerHTML=list.length?list.map(rowHTML).join(''):'<div class="empty">No listings match your search/filter.</div>';
+  }
+  function rowHTML(l){
+    const st=stageOf(l);
+    return `<div class="pcard">
+      <div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap">
+        <div style="display:flex;gap:10px;align-items:flex-start">
+          <input type="checkbox" class="sel" value="${l.id}" style="margin-top:4px">
+          <div><h3>${esc(l.name)} <span class="st ${st.cls}">${st.label}</span></h3>
+            <div class="meta">${code(l.id)} · ${esc(l.area||'')}${l.area?', ':''}${esc(l.city)} · ${money(l.startingRent)}/mo · ${esc(l.gender||'')}</div></div>
+        </div>
+        <div><span class="detail-toggle" onclick="toggleDetail(${l.id})">View / edit ▾</span></div>
+      </div>
+      <div id="d-${l.id}" style="display:none;border-top:1px solid var(--line);margin-top:10px;padding-top:10px"></div>
+    </div>`;
+  }
+  async function deleteSelected(){
+    const ids=[...document.querySelectorAll('.sel:checked')].map(c=>Number(c.value));
+    if(!ids.length)return toast('Select at least one');
+    if(!confirm(`Delete ${ids.length} listing(s)? Cannot be undone.`))return;
+    await api('/api/admin/listings/delete',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({ids})});
+    toast('Deleted');await loadAll();
+  }
+  function toggleDetail(id){
+    const box=$('d-'+id);
+    if(box.style.display==='block'){box.style.display='none';return;}
+    box.style.display='block';
+    const l=_all.find(x=>x.id===id),st=stageOf(l);
+    const rooms=(l.rooms||[]).map(r=>`<div class="kv">• ${esc(r.type)} — ${money(r.rent)}/mo ${[r.ac?'AC':'',r.washroom?'Attached washroom':'',r.furnished?'Furnished':''].filter(Boolean).join(', ')}</div>`).join('')||'<div class="kv">—</div>';
+    const sf=l.safety||{};
+    const safety=[sf.guard&&'Security guard',sf.warden&&'Warden',sf.biometric&&'Biometric',sf.visitorRegister&&'Visitor register'].filter(Boolean).join(', ')||'—';
+    const photos=(l.photos||[]).map(p=>`<img class="thumb" src="${p}">`).join('')||'—';
+    // Stage-specific actions
+    let actions='';
+    if(st.key==='raw'||st.key==='pending'||st.key==='rejected'){
+      actions=`<button class="neutral" onclick="stageAct(${l.id},'publish')">Send live (unverified)</button>
+               <button class="approve" onclick="stageAct(${l.id},'verify')">✓ Verify &amp; publish</button>
+               ${st.key!=='rejected'?`<button class="reject" onclick="stageAct(${l.id},'reject')">Reject</button>`:''}`;
+    } else if(st.key==='unverified'){
+      actions=`<button class="approve" onclick="stageAct(${l.id},'verify')">✓ Mark verified</button>
+               <button class="neutral" onclick="stageAct(${l.id},'draft')">Pull to raw</button>`;
+    } else if(st.key==='verified'){
+      actions=`<button class="neutral" onclick="stageAct(${l.id},'unverify')">Unverify</button>`;
+    }
+    box.innerHTML=`
+      <div class="kv"><b>Owner:</b> ${esc(l.ownerName||'—')} (${l.ownerId||'—'})</div>
+      <div class="kv"><b>Near:</b> ${esc(l.nearCollege||'—')} · <b>Food:</b> ${l.foodIncluded?'Yes':'No'} ${esc(l.foodDetail||'')} · <b>From:</b> ${esc(l.availableFrom||'—')}</div>
+      <div class="kv"><b>Contact:</b> ${esc(l.contactPhone||'—')} · WA: ${esc(l.contactWhatsApp||'—')}</div>
+      <div class="kv"><b>Amenities:</b> ${(l.amenities||[]).join(', ')||'—'}</div>
+      <div class="kv"><b>Safety:</b> ${safety} ${sf.checkIn?'· in '+esc(sf.checkIn):''} ${sf.checkOut?'· out '+esc(sf.checkOut):''}</div>
+      <div class="kv"><b>Rooms:</b></div>${rooms}
+      <div class="kv"><b>Rules:</b> ${esc(l.rules||'—')}</div>
+      <div class="kv"><b>Description:</b> ${esc(l.description||'—')}</div>
+      <div class="kv"><b>Map:</b> ${l.lat?`${l.lat}, ${l.lng}`:'—'} ${l.mapLink?`· <a href="${esc(l.mapLink)}" target="_blank">link</a>`:''}</div>
+      <div class="kv"><b>Photos:</b><br>${photos}</div>
+      <div class="kv"><b>Created:</b> ${dt(l.createdAt)} · <b>Verified:</b> ${dt(l.verifiedAt)}</div>
+      <div class="acts">${actions}
+        <button class="neutral" onclick="openEdit(${l.id})">✎ Edit all details</button>
+        <button class="reject" onclick="deleteOne(${l.id})">🗑 Delete</button>
+      </div>
+      <div id="e-${l.id}"></div>`;
+  }
+  async function stageAct(id,action){
+    await adminFetch(`/api/admin/listings/${id}/${action}`,{method:'POST'});
+    toast('Updated');await loadAll();
+  }
+  async function deleteOne(id){
+    if(!confirm('Delete this listing? Cannot be undone.'))return;
+    await adminFetch(`/api/admin/listings/${id}/delete`,{method:'POST'});
+    toast('Deleted');await loadAll();
+  }
+
+  // ---- Full edit (mirrors owner form) ----
+  let ed={id:null,rooms:[],photos:[],lat:null,lng:null}, edMap=null, edMarker=null;
+  function openEdit(id){
+    const l=_all.find(x=>x.id===id);
+    ed={id, rooms:(l.rooms||[]).map(r=>({...r})), photos:[...(l.photos||[])], lat:(typeof l.lat==='number'?l.lat:null), lng:(typeof l.lng==='number'?l.lng:null)};
+    if(!ed.rooms.length) ed.rooms=[{type:'',rent:'',ac:false,washroom:false,furnished:false}];
+    const sf=l.safety||{};
+    $('e-'+id).innerHTML=`
+      <div style="border-top:1px dashed var(--line);margin-top:10px;padding-top:12px">
+      <div class="editgrid">
+        <div class="f"><label>Name</label><input id="e-name" value="${esc(l.name)}"></div>
+        <div class="f"><label>City</label><select id="e-city">${CITIES.map(c=>`<option ${c===l.city?'selected':''}>${c}</option>`).join('')}</select></div>
+        <div class="f"><label>Area</label><input id="e-area" value="${esc(l.area||'')}"></div>
+        <div class="f"><label>Near College / Company / Area / Landmark</label><input id="e-col" value="${esc(l.nearCollege||'')}" placeholder="commas for multiple"></div>
+        <div class="f"><label>Full address</label><input id="e-address" value="${esc(l.address||'')}"></div>
+        <div class="f"><label>For</label><select id="e-gender">${['Girls','Boys','Co-ed'].map(g=>`<option ${g===l.gender?'selected':''}>${g}</option>`).join('')}</select></div>
+        <div class="f"><label>Available from</label><input id="e-date" type="date" value="${esc(l.availableFrom||'')}"></div>
+        <div class="f"><label>Food included</label><select id="e-food"><option value="true" ${l.foodIncluded?'selected':''}>Yes</option><option value="false" ${!l.foodIncluded?'selected':''}>No</option></select></div>
+        <div class="f"><label>Food detail</label><input id="e-fooddetail" value="${esc(l.foodDetail||'')}"></div>
+        <div class="f"><label>Contact phone</label><input id="e-phone" value="${esc(l.contactPhone||'')}"></div>
+        <div class="f"><label>WhatsApp</label><input id="e-wa" value="${esc(l.contactWhatsApp||'')}"></div>
+      </div>
+      <div class="f" style="margin-top:8px"><label>Description</label><textarea id="e-desc" style="min-height:50px">${esc(l.description||'')}</textarea></div>
+      <div class="f" style="margin-top:8px"><label>House rules</label><textarea id="e-rules" style="min-height:40px">${esc(l.rules||'')}</textarea></div>
+
+      <div style="font-weight:800;color:var(--purple2);margin:14px 0 6px">Room types</div>
+      <div id="ed-rooms"></div>
+      <button class="neutral" style="padding:6px 12px;border-radius:8px;cursor:pointer" onclick="edAddRoom()">+ Add room</button>
+
+      <div style="font-weight:800;color:var(--purple2);margin:14px 0 6px">Amenities</div>
+      <div class="checks" id="ed-amen">${AMEN.map(a=>`<label><input type="checkbox" value="${a}" ${(l.amenities||[]).includes(a)?'checked':''}> ${a}</label>`).join('')}</div>
+
+      <div style="font-weight:800;color:var(--purple2);margin:14px 0 6px">Safety</div>
+      <div class="checks">
+        <label><input type="checkbox" id="e-guard" ${sf.guard?'checked':''}> Security guard</label>
+        <label><input type="checkbox" id="e-warden" ${sf.warden?'checked':''}> Warden</label>
+        <label><input type="checkbox" id="e-bio" ${sf.biometric?'checked':''}> Biometric entry</label>
+        <label><input type="checkbox" id="e-visit" ${sf.visitorRegister?'checked':''}> Visitor register</label>
+      </div>
+      <div class="editgrid">
+        <div class="f"><label>Check-in</label><input id="e-checkin" value="${esc(sf.checkIn||'')}"></div>
+        <div class="f"><label>Check-out/curfew</label><input id="e-checkout" value="${esc(sf.checkOut||'')}"></div>
+      </div>
+
+      <div style="font-weight:800;color:var(--purple2);margin:14px 0 6px">Photos</div>
+      <input type="file" accept="image/*" multiple onchange="edUpload(this.files)">
+      <div id="ed-photos" style="margin-top:8px"></div>
+
+      <div style="font-weight:800;color:var(--purple2);margin:14px 0 6px">Location</div>
+      <div style="display:flex;gap:8px;margin-bottom:8px">
+        <input id="ed-search" placeholder="Search address/area" style="flex:1;border:1px solid var(--line);border-radius:8px;padding:8px;font-size:13px" onkeydown="if(event.key==='Enter'){event.preventDefault();edSearch();}">
+        <button class="neutral" style="padding:8px 14px;border-radius:8px;cursor:pointer" onclick="edSearch()">Search</button>
+      </div>
+      <div id="edmap" style="height:200px;border-radius:8px;border:1px solid var(--line)"></div>
+      <div id="ed-pin" class="kv" style="margin-top:4px">${ed.lat?'Pin: '+ed.lat+', '+ed.lng:'No pin set'}</div>
+      <div class="f" style="margin-top:8px"><label>Google Maps link</label><input id="e-map" value="${esc(l.mapLink||'')}"></div>
+      <div style="font-weight:800;color:var(--purple2);margin:14px 0 6px">Costs &amp; terms</div>
+      <div class="editgrid">
+        <div class="f"><label>Deposit (₹)</label><input id="e-deposit" type="number" value="${esc(l.deposit||'')}"></div>
+        <div class="f"><label>Notice period</label><input id="e-notice" value="${esc(l.noticePeriod||'')}"></div>
+        <div class="f"><label>Electricity</label><select id="e-elec"><option value="" ${!l.electricity?'selected':''}>Not specified</option>${['Included in rent','Metered (as used)','Fixed extra'].map(o=>`<option ${l.electricity===o?'selected':''}>${o}</option>`).join('')}</select></div>
+        <div class="f"><label>Deposit refund</label><input id="e-refund" value="${esc(l.depositRefund||'')}"></div>
+        <div class="f"><label>Other charges</label><input id="e-extra" value="${esc(l.extraCharges||'')}"></div>
+      </div>
+
+      <button class="approve" style="padding:10px 18px;border-radius:8px;cursor:pointer;margin-top:14px" onclick="saveEdit(${id})">Save all changes</button>
+      </div>`;
+    edRenderRooms(); edRenderPhotos(); edInitMap();
+  }
+  function edAddRoom(){ed.rooms.push({type:'',rent:'',ac:false,washroom:false,furnished:false});edRenderRooms();}
+  function edRmRoom(i){ed.rooms.splice(i,1);if(!ed.rooms.length)edAddRoom();else edRenderRooms();}
+  function edUpdRoom(i,k,v){ed.rooms[i][k]=v;}
+  function edRenderRooms(){
+    $('ed-rooms').innerHTML=ed.rooms.map((r,i)=>`
+      <div class="roomedit">
+        <div class="editgrid">
+          <div class="f"><label>Type</label><input value="${esc(r.type)}" oninput="edUpdRoom(${i},'type',this.value)" placeholder="Single AC"></div>
+          <div class="f"><label>Rent</label><input type="number" value="${esc(r.rent)}" oninput="edUpdRoom(${i},'rent',this.value)"></div>
+        </div>
+        <div class="checks" style="margin-top:6px">
+          <label><input type="checkbox" ${r.ac?'checked':''} onchange="edUpdRoom(${i},'ac',this.checked)"> AC</label>
+          <label><input type="checkbox" ${r.washroom?'checked':''} onchange="edUpdRoom(${i},'washroom',this.checked)"> Attached washroom</label>
+          <label><input type="checkbox" ${r.furnished?'checked':''} onchange="edUpdRoom(${i},'furnished',this.checked)"> Furnished</label>
+        </div>
+        ${ed.rooms.length>1?`<button class="reject" style="padding:5px 10px;border-radius:6px;cursor:pointer;font-size:12px" onclick="edRmRoom(${i})">Remove</button>`:''}
+      </div>`).join('');
+  }
+  function edRenderPhotos(){
+    $('ed-photos').innerHTML=ed.photos.map((p,i)=>`<span class="pp"><img class="thumb" src="${p}"><button onclick="edRemovePhoto(${i})">✕</button></span>`).join('')||'<span class="kv">No photos</span>';
+  }
+  // Persist photos to the listing right away (so they stick even without "Save all changes").
+  async function edPersistPhotos(){
+    try{ await api('/api/admin/listings/'+ed.id+'/update',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({photos:ed.photos})}); }catch{}
+  }
+  function edRemovePhoto(i){ ed.photos.splice(i,1); edRenderPhotos(); edPersistPhotos(); }
+  function fileToB64(f){return new Promise((res,rej)=>{const r=new FileReader();r.onload=()=>res(String(r.result).split(',')[1]);r.onerror=rej;r.readAsDataURL(f);});}
+  async function edUpload(files){
+    let added=0;
+    for(const file of files){
+      if(!file.type.startsWith('image/'))continue;
+      if(file.size>5*1024*1024){toast(file.name+' over 5MB');continue;}
+      try{
+        const dataBase64=await fileToB64(file);
+        const res=await fetch('/api/upload',{method:'POST',headers:{'Content-Type':'application/json','X-Admin-Key':KEY},body:JSON.stringify({filename:file.name,contentType:file.type,dataBase64})});
+        const d=await res.json();
+        if(d.url){ed.photos.push(d.url);edRenderPhotos();added++;}
+        else toast(d.error||'Upload failed');
+      }catch{toast('Upload failed');}
+    }
+    if(added){ await edPersistPhotos(); toast(added+' photo(s) uploaded & saved'); }
+  }
+  function edInitMap(){
+    const c=ed.lat!=null?[ed.lat,ed.lng]:(CITY_COORDS[$('e-city').value]||CITY_COORDS.Nagpur);
+    setTimeout(()=>{
+      if(edMap){edMap.remove();edMap=null;edMarker=null;}
+      edMap=L.map('edmap').setView(c,ed.lat!=null?15:12);
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'© OpenStreetMap'}).addTo(edMap);
+      edMap.on('click',e=>edSetPin(e.latlng.lat,e.latlng.lng));
+      if(ed.lat!=null)edSetPin(ed.lat,ed.lng);
+      edMap.invalidateSize();
+    },120);
+  }
+  function edSetPin(lat,lng){
+    ed.lat=Math.round(lat*1e6)/1e6;ed.lng=Math.round(lng*1e6)/1e6;
+    if(edMarker)edMap.removeLayer(edMarker);
+    edMarker=L.marker([lat,lng]).addTo(edMap);
+    $('ed-pin').textContent='Pin: '+ed.lat+', '+ed.lng;
+  }
+  async function geocode(q,ctx){
+    const c=(ctx||'').trim();const variants=[];
+    if(c && !q.toLowerCase().includes(c.toLowerCase()))variants.push(`${q}, ${c}, India`);
+    if(!/india/i.test(q))variants.push(`${q}, India`);
+    variants.push(q);
+    for(const v of variants){
+      try{const r=await fetch('https://nominatim.openstreetmap.org/search?format=json&limit=1&countrycodes=in&q='+encodeURIComponent(v));const d=await r.json();if(d&&d.length)return{lat:+d[0].lat,lng:+d[0].lon};}catch{}
+    }
+    return null;
+  }
+  async function edSearch(){
+    const q=$('ed-search').value.trim();if(!q)return;
+    const hit=await geocode(q,$('e-city')?$('e-city').value:'');
+    if(hit){edMap.setView([hit.lat,hit.lng],16);edSetPin(hit.lat,hit.lng);}else toast('No match — try adding the city, or click the map');
+  }
+  async function saveEdit(id){
+    const rooms=ed.rooms.filter(r=>r.type&&String(r.type).trim()&&Number(r.rent)>0).map(r=>({type:String(r.type).trim(),rent:Number(r.rent),ac:!!r.ac,washroom:!!r.washroom,furnished:!!r.furnished}));
+    const amenities=[...document.querySelectorAll('#ed-amen input:checked')].map(c=>c.value);
+    const patch={
+      name:$('e-name').value,city:$('e-city').value,area:$('e-area').value,nearCollege:$('e-col').value,address:$('e-address').value,
+      gender:$('e-gender').value,availableFrom:$('e-date').value,foodIncluded:$('e-food').value==='true',foodDetail:$('e-fooddetail').value,
+      contactPhone:$('e-phone').value,contactWhatsApp:$('e-wa').value,description:$('e-desc').value,rules:$('e-rules').value,
+      amenities,rooms,photos:ed.photos,mapLink:$('e-map').value,
+      deposit:Number($('e-deposit').value)||0,noticePeriod:$('e-notice').value,electricity:$('e-elec').value,depositRefund:$('e-refund').value,extraCharges:$('e-extra').value,
+      safety:{guard:$('e-guard').checked,warden:$('e-warden').checked,biometric:$('e-bio').checked,visitorRegister:$('e-visit').checked,checkIn:$('e-checkin').value,checkOut:$('e-checkout').value},
+      hasAC:rooms.some(r=>r.ac)||amenities.includes('AC'),
+    };
+    if(rooms.length)patch.startingRent=Math.min(...rooms.map(r=>r.rent));
+    if(ed.lat!=null){patch.lat=ed.lat;patch.lng=ed.lng;}
+    const res=await api('/api/admin/listings/'+id+'/update',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(patch)});
+    if(res.error)return toast(res.error);
+    toast('Saved');await loadAll();
+  }
+
+  // ---- Enquiries ----
+  async function loadEnq(){
+    const list=await api('/api/admin/enquiries');
+    if(!list.length){$('content').innerHTML='<div class="empty">No enquiries yet.</div>';return;}
+    $('content').innerHTML=list.slice().reverse().map(e=>`<div class="pcard"><h3>${esc(e.name)} <span style="font-weight:500;color:var(--muted);font-size:13px">→ ${esc(e.listingName||('#'+e.listingId))}</span></h3><div class="meta">📞 ${esc(e.phone)} · ${dt(e.createdAt)}</div>${e.message?`<div style="font-size:13px">${esc(e.message)}</div>`:''}</div>`).join('');
+  }
+
+  // ---- Users ----
+  let _users=[],_userSearch='';
+  async function loadUsers(){
+    _users=await api('/api/admin/users');
+    if(!Array.isArray(_users)){$('content').innerHTML='<div class="empty">Could not load users.</div>';return;}
+    $('content').innerHTML=`
+      <input id="user-search" value="${esc(_userSearch)}" placeholder="🔍 Search by name, email or mobile…" oninput="_userSearch=this.value;renderUsers()" style="width:100%;border:1px solid var(--line);border-radius:10px;padding:10px;font-size:14px;margin-bottom:12px">
+      <div class="meta" style="margin-bottom:10px">${_users.length} user(s).</div>
+      <div id="user-rows"></div>`;
+    renderUsers();
+  }
+  function renderUsers(){
+    const q=_userSearch.toLowerCase();
+    const list=_users.filter(u=>!q||[u.name,u.email,u.phone].some(v=>String(v||'').toLowerCase().includes(q)));
+    $('user-rows').innerHTML=list.length?list.slice().reverse().map(u=>`
+      <div class="pcard"><h3>${esc(u.name)} <span class="st ${u.role==='owner'?'approved':'pending'}">${esc(u.role)}</span></h3>
+      <div class="meta">${esc(u.email)} · 📱 ${esc(u.phone||'—')}</div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px">
+        <input id="pw-${u.id}" type="text" placeholder="New password (min 6)" style="border:1px solid var(--line);border-radius:8px;padding:8px;font-size:13px">
+        <button class="neutral" style="padding:8px 14px;border-radius:8px;cursor:pointer" onclick="resetPw(${u.id})">Reset password</button>
+      </div></div>`).join(''):'<div class="empty">No users match.</div>';
+  }
+  async function resetPw(id){
+    const pw=$('pw-'+id).value;if(pw.length<6)return toast('Min 6 characters');
+    const res=await api('/api/admin/users/'+id+'/password',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({password:pw})});
+    if(res.error)return toast(res.error);toast('Password reset');$('pw-'+id).value='';
+  }
+
+  // ---- Import CSV ----
+  let _parsed=[];
+  function loadImport(){
+    $('content').innerHTML=`
+      <div class="pcard imp">
+        <h3>Bulk import / update listings from CSV</h3>
+        <div class="meta">Upload a CSV. You'll see any rows with problems (highlighted to fix). Choose <b>Add new</b> (duplicates auto-skipped) or <b>Update existing</b> — for updates, include a <b>UID</b> column (export the current listings to get UIDs, edit, and re-upload).</div>
+        <a href="/listing-template.csv" download style="display:inline-block;margin:0 12px 12px 0;color:var(--purple2);font-weight:700;text-decoration:none">⬇ Download template</a>
+        <a onclick="exportAllCSV()" style="display:inline-block;margin-bottom:12px;color:var(--purple2);font-weight:700;text-decoration:none;cursor:pointer">⬇ Export current listings (to edit &amp; re-upload)</a><br>
+        <input type="file" accept=".csv,text/csv" onchange="onCsv(this.files[0])">
+        <div id="imp-preview" style="margin-top:12px"></div>
+      </div>`;
+  }
+  function onCsv(file){if(!file)return;const r=new FileReader();r.onload=()=>{_parsed=parseCSV(String(r.result));renderPreview();};r.readAsText(file);}
+  const _bool=v=>String(v).trim().toLowerCase()==='true';
+  const uidToId=v=>{const d=String(v||'').replace(/\D/g,'');return d?Number(d):0;};
+  function tokenizeCSV(text){
+    const rows=[];let i=0,field='',row=[],inQ=false;
+    while(i<text.length){const c=text[i];
+      if(inQ){if(c==='"'){if(text[i+1]==='"'){field+='"';i++;}else inQ=false;}else field+=c;}
+      else{if(c==='"')inQ=true;else if(c===','){row.push(field);field='';}else if(c==='\n'||c==='\r'){if(field!==''||row.length){row.push(field);rows.push(row);row=[];field='';}if(c==='\r'&&text[i+1]==='\n')i++;}else field+=c;}
+      i++;}
+    if(field!==''||row.length){row.push(field);rows.push(row);}
+    return rows;
+  }
+  function parseCSV(text){
+    const raw=tokenizeCSV(text); if(!raw.length)return [];
+    const H=raw[0].map(h=>h.trim());
+    const out=[];
+    raw.slice(1).forEach((r,idx)=>{
+      if(!r.some(c=>c.trim()))return; // skip fully-blank line
+      const o={};H.forEach((h,k)=>o[h]=(r[k]||'').trim());
+      const rooms=[];[1,2,3].forEach(n=>{const t=o['room'+n+'Type'],rt=Number(o['room'+n+'Rent']);if(t&&rt>0)rooms.push({type:t,rent:rt,ac:_bool(o['room'+n+'AC']),washroom:_bool(o['room'+n+'Washroom']),furnished:_bool(o['room'+n+'Furnished'])});});
+      let rent=Number(o.startingRent)||0;if(!rent&&rooms.length)rent=Math.min(...rooms.map(x=>x.rent));if(!rooms.length&&rent)rooms.push({type:'Standard room',rent});
+      // --- discrepancy checks ---
+      const issues=[], blocking=[];
+      if(!o.name) blocking.push('missing name');
+      if(!o.city) blocking.push('missing city');
+      else if(!CITIES.some(c=>c.toLowerCase()===o.city.toLowerCase())) issues.push('unknown city "'+o.city+'"');
+      if(o.startingRent && isNaN(Number(o.startingRent))) issues.push('rent is not a number');
+      if(!rent && !rooms.length) issues.push('no price / room given');
+      if(o.gender && !['girls','boys','co-ed','coed'].includes(o.gender.toLowerCase())) issues.push('unusual gender "'+o.gender+'"');
+      if(!o.contactPhone) issues.push('no contact number');
+      if(o.lat && isNaN(Number(o.lat))) issues.push('lat not a number');
+      if(o.lng && isNaN(Number(o.lng))) issues.push('lng not a number');
+      out.push({name:o.name,city:o.city,area:o.area,nearCollege:o.nearCollege,address:o.address||'',gender:o.gender||'Co-ed',startingRent:rent,
+        deposit:Number(o.deposit)||0,depositRefund:o.depositRefund||'',noticePeriod:o.noticePeriod||'',electricity:o.electricity||'',extraCharges:o.extraCharges||'',
+        contactPhone:o.contactPhone,contactWhatsApp:o.contactWhatsApp,foodIncluded:_bool(o.foodIncluded),foodDetail:o.foodDetail||'',
+        amenities:(o.amenities||'').split(';').map(a=>a.trim()).filter(Boolean),availableFrom:o.availableFrom||'',description:o.description||'',rules:o.rules||'',
+        mapLink:o.mapLink||'',lat:o.lat?Number(o.lat):undefined,lng:o.lng?Number(o.lng):undefined,
+        safety:{guard:_bool(o.securityGuard),warden:_bool(o.warden),biometric:_bool(o.biometric),visitorRegister:_bool(o.visitorRegister),checkIn:o.checkIn||'',checkOut:o.checkOut||''},
+        rooms,photos:(o.photos||'').split(';').map(p=>p.trim()).filter(Boolean),hasAC:rooms.some(x=>x.ac),
+        _row:idx+2, _raw:o, _uid:o.UID||o.uid||o.id||'', _issues:issues, _blocking:blocking});
+    });
+    return out;
+  }
+  // Build a partial patch for bulk-update: only fields actually present (non-empty) in the row.
+  function buildUpdatePatch(o){
+    const p={}, set=(k,v)=>{ if(v!==undefined && String(v).trim()!=='') p[k]=v; };
+    ['name','city','area','nearCollege','address','gender','contactPhone','contactWhatsApp','description','rules','mapLink','availableFrom','foodDetail','depositRefund','noticePeriod','electricity','extraCharges'].forEach(f=>set(f,o[f]));
+    if(o.startingRent!==undefined&&o.startingRent!=='') p.startingRent=Number(o.startingRent)||0;
+    if(o.deposit!==undefined&&o.deposit!=='') p.deposit=Number(o.deposit)||0;
+    if(o.foodIncluded!==undefined&&o.foodIncluded!=='') p.foodIncluded=_bool(o.foodIncluded);
+    if(o.amenities) p.amenities=o.amenities.split(';').map(a=>a.trim()).filter(Boolean);
+    if(o.photos) p.photos=o.photos.split(';').map(a=>a.trim()).filter(Boolean);
+    if(o.lat&&!isNaN(Number(o.lat))) p.lat=Number(o.lat);
+    if(o.lng&&!isNaN(Number(o.lng))) p.lng=Number(o.lng);
+    const rooms=[];[1,2,3].forEach(n=>{const t=o['room'+n+'Type'],rt=Number(o['room'+n+'Rent']);if(t&&rt>0)rooms.push({type:t,rent:rt,ac:_bool(o['room'+n+'AC']),washroom:_bool(o['room'+n+'Washroom']),furnished:_bool(o['room'+n+'Furnished'])});});
+    if(rooms.length){ p.rooms=rooms; p.startingRent=Math.min(...rooms.map(x=>x.rent)); }
+    return p;
+  }
+  function renderPreview(){
+    const flagged=_parsed.filter(r=>r._issues.length||r._blocking.length);
+    const importable=_parsed.filter(r=>!r._blocking.length);
+    const withUid=_parsed.filter(r=>uidToId(r._uid)>0).length;
+    $('imp-preview').innerHTML=`
+      <div class="kv"><b>${_parsed.length}</b> rows read · <b style="color:var(--green)">${importable.length}</b> importable · <b style="color:#b00">${flagged.length}</b> need attention.</div>
+      ${flagged.length?`<div class="pcard" style="border-color:#e0b4b4;background:#fff7f7;margin:10px 0">
+        <b style="color:#b00">⚠ Rows to fix (${flagged.length})</b>
+        <div class="meta">Fix these in your CSV and re-upload. Rows with "missing name/city" are skipped; others import but may be wrong.</div>
+        <div style="max-height:200px;overflow:auto">${flagged.map(r=>`<div class="kv">Row ${r._row}: <b>${esc(r.name||'(no name)')}</b> — <span style="color:#b00">${[...r._blocking,...r._issues].join(', ')}</span></div>`).join('')}</div>
+        <button class="neutral" style="margin-top:8px;padding:7px 12px;border-radius:8px;cursor:pointer" onclick="downloadFlagged()">⬇ Download flagged rows (CSV)</button>
+      </div>`:'<div class="kv" style="color:var(--green)">✓ No discrepancies found.</div>'}
+      <div style="margin:14px 0 6px"><b style="font-size:13px">What do you want to do?</b></div>
+      <label style="font-size:13px;display:block;margin:3px 0"><input type="radio" name="impmode" value="new" checked onchange="renderPreview()"> Add as NEW listings</label>
+      <label style="font-size:13px;display:block;margin:3px 0"><input type="radio" name="impmode" value="update"${_mode==='update'?' checked':''} onchange="renderPreview()"> Update EXISTING listings (match by UID column)${withUid?` — ${withUid} row(s) have a UID`:' — no UID column found!'}</label>
+      ${_mode==='new'?`<div style="margin:8px 0"><b style="font-size:13px">Stage:</b>
+        <label style="font-size:13px;margin-left:8px"><input type="radio" name="stage" value="draft" checked> Raw</label>
+        <label style="font-size:13px;margin-left:8px"><input type="radio" name="stage" value="unverified"> Live · Unverified</label>
+        <label style="font-size:13px;margin-left:8px"><input type="radio" name="stage" value="verified"> Verified</label></div>`:'<div class="meta" style="margin:8px 0">Only non-empty cells will overwrite; blank cells are left unchanged. Keep the UID column.</div>'}
+      <button class="approve" style="padding:10px 18px;border-radius:8px;cursor:pointer" onclick="doImport()">${_mode==='update'?'Update listings':'Import'}</button>`;
+  }
+  let _mode='new';
+  document.addEventListener('change',e=>{ if(e.target&&e.target.name==='impmode') _mode=e.target.value; });
+  function downloadFlagged(){
+    const flagged=_parsed.filter(r=>r._issues.length||r._blocking.length);
+    const cols=['row','name','city','issues']; const rows=[cols];
+    flagged.forEach(r=>rows.push([r._row,r.name,r.city,[...r._blocking,...r._issues].join('; ')]));
+    downloadCSV('flagged-rows.csv',rows);
+  }
+  let _importing=false;
+  async function doImport(){
+    if(!_parsed.length)return toast('Nothing to process');
+    if(_importing)return;_importing=true;
+    document.querySelectorAll('#imp-preview button').forEach(b=>b.disabled=true);
+    try{
+      if(_mode==='update'){
+        const rows=_parsed.map(r=>({uid:uidToId(r._uid),patch:buildUpdatePatch(r._raw)})).filter(x=>x.uid>0);
+        if(!rows.length){toast('No rows with a valid UID');return;}
+        const res=await api('/api/admin/bulk-update',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({rows})});
+        if(res.error){toast(res.error);return;}
+        toast(`Updated ${res.updated}${res.notFound&&res.notFound.length?', '+res.notFound.length+' not found':''}`);
+        showUpdateSummary(res); _parsed=[];
+      } else {
+        const stage=(document.querySelector('input[name=stage]:checked')||{}).value||'draft';
+        const res=await api('/api/admin/import',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({rows:_parsed.filter(r=>!r._blocking.length),stage})});
+        if(res.error){toast(res.error);return;}
+        toast(`Imported ${res.created}${res.duplicates?', '+res.duplicates+' dup':''}${res.skipped?', '+res.skipped+' invalid':''}`);
+        showImportSummary(res); _parsed=[];
+      }
+    }finally{_importing=false;}
+  }
+  function showUpdateSummary(res){
+    const nf=res.notFound||[];
+    const wrap=document.createElement('div'); wrap.className='modal-bg show'; wrap.style.zIndex='95';
+    wrap.innerHTML=`<div class="modal" style="max-width:520px;max-height:82vh;overflow:auto">
+      <h3 style="font-size:18px;margin-bottom:8px">Bulk update summary</h3>
+      <div class="pcard" style="border-color:#cdebd9;background:#f2fbf6"><b style="color:var(--green)">✓ Updated: ${res.updated}</b></div>
+      ${nf.length?`<div class="pcard" style="border-color:#e0b4b4;background:#fff7f7;margin-top:10px"><b style="color:#b00">⚠ Not found: ${nf.length}</b><div class="meta">These UIDs didn't match any listing.</div>${nf.map(x=>`<div class="kv">• ${esc(x)}</div>`).join('')}</div>`:''}
+      <button style="width:100%;background:var(--purple2);color:#fff;border:none;padding:11px;border-radius:10px;font-weight:800;cursor:pointer;margin-top:10px" onclick="this.closest('.modal-bg').remove();loadAll&&0">Done</button>
+    </div>`;
+    wrap.addEventListener('click',e=>{if(e.target===wrap)wrap.remove();});
+    document.body.appendChild(wrap); $('imp-preview').innerHTML='';
+  }
+</script>
+</body>
+</html>
