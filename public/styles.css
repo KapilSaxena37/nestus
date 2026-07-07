@@ -65,6 +65,7 @@ a{color:inherit;text-decoration:none;}
 .chips{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:18px;}
 .chip{border:1px solid var(--line);background:#fff;color:var(--muted);padding:7px 14px;border-radius:30px;font-size:13px;font-weight:600;cursor:pointer;transition:.15s;}
 .chip.on{background:var(--purple2);color:#fff;border-color:var(--purple2);}
+.loadmore-wrap{grid-column:1/-1;text-align:center;margin-top:8px;}
 .resultctrls{display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin-bottom:16px;}
 .resultctrls input[type=range]{flex:1;min-width:140px;max-width:260px;accent-color:var(--purple2);}
 .cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(290px,1fr));gap:18px;}

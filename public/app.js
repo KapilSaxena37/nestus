@@ -120,6 +120,7 @@ async function homeSearch() {
   if ($('price-range')) { $('price-range').value = 20000; onPriceInput(); }
   const all = await api('/api/listings');           // all approved listings
   state.lastResults = Array.isArray(all) ? all : [];
+  state.resultsShown = PAGE_SIZE;
   route('results');
   $('results-search').value = q;                    // reuse the in-place keyword filter
   $('results-title').textContent = `Results for "${q}"`;
@@ -171,6 +172,7 @@ async function loadResults() {
   const pr = Number($('price-range') ? $('price-range').value : 20000);
   if (pr < 20000) f.maxRent = pr;
   const params = new URLSearchParams(Object.entries(f).filter(([, v]) => v && v !== 'Any')).toString();
+  state.resultsShown = PAGE_SIZE; // reset pagination for a fresh search
   $('results-cards').innerHTML = skeletonCards(6); // show placeholders while loading
   const list = await api('/api/listings?' + params);
   state.lastResults = list;
@@ -189,6 +191,7 @@ function currentResults() {
   return all.filter(l => [l.name, l.area, l.city, l.distance, l.nearCollege, l.address]
     .some(v => String(v || '').toLowerCase().includes(q)));
 }
+const PAGE_SIZE = 12;
 function renderResultsCards() {
   const list = currentResults();
   if (!list.length) {
@@ -196,12 +199,20 @@ function renderResultsCards() {
     $('results-cards').innerHTML = hasFilter
       ? `<div class="empty">No results match "${esc($('results-search').value.trim())}". Try a different word.</div>`
       : `<div class="empty">No matches yet. Try removing some filters,<br>or be the first to <a style="color:var(--purple2);font-weight:700" onclick="route('list')">list a property here</a>.</div>`;
-  } else {
-    $('results-cards').innerHTML = list.map(cardHTML).join('');
+    renderSuggestions();
+    return;
   }
+  const shown = Math.min(state.resultsShown || PAGE_SIZE, list.length);
+  let html = list.slice(0, shown).map(cardHTML).join('');
+  if (list.length > shown) {
+    html += `<div class="loadmore-wrap"><button class="btn alt" style="width:auto;padding:11px 28px" onclick="loadMoreResults()">Load more (${list.length - shown} more)</button></div>`;
+  }
+  $('results-cards').innerHTML = html;
   renderSuggestions();
 }
+function loadMoreResults() { state.resultsShown = (state.resultsShown || PAGE_SIZE) + PAGE_SIZE; renderResultsCards(); }
 function filterResults() {
+  state.resultsShown = PAGE_SIZE; // reset pagination when the in-place filter changes
   renderResultsCards();
   if ($('results-map').style.display === 'block') renderResultsMap();
 }
