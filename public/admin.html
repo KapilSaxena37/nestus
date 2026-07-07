@@ -65,7 +65,8 @@
         <button id="tab-all" onclick="show('all')">All listings</button>
         <button id="tab-enq" onclick="show('enq')">Enquiries</button>
         <button id="tab-users" onclick="show('users')">Users</button>
-        <button id="tab-import" onclick="show('import')">Import CSV</button>
+        <button id="tab-import" onclick="show('import')">➕ Import new</button>
+        <button id="tab-update" onclick="show('update')">✎ Bulk update</button>
       </div>
       <div id="content"></div>
     </div>
@@ -135,8 +136,8 @@
     $('panel').style.display='block';show('dash');
   }
   function show(t){
-    ['dash','all','enq','users','import'].forEach(x=>$('tab-'+x).classList.toggle('on',x===t));
-    ({dash:loadDash,all:loadAll,enq:loadEnq,users:loadUsers,import:loadImport})[t]();
+    ['dash','all','enq','users','import','update'].forEach(x=>$('tab-'+x).classList.toggle('on',x===t));
+    ({dash:loadDash,all:loadAll,enq:loadEnq,users:loadUsers,import:loadImport,update:loadUpdate})[t]();
   }
 
   // ---- Dashboard ----
@@ -478,61 +479,158 @@
   function loadImport(){
     $('content').innerHTML=`
       <div class="pcard imp">
-        <h3>Bulk import listings from CSV</h3>
-        <div class="meta">Use the template (download below). Imported rows go in as your chosen stage. Duplicate name+city rows are skipped automatically.</div>
-        <a href="/listing-template.csv" download style="display:inline-block;margin-bottom:12px;color:var(--purple2);font-weight:700;text-decoration:none">⬇ Download CSV template</a><br>
-        <input type="file" accept=".csv,text/csv" onchange="onCsv(this.files[0])">
+        <h3>➕ Import NEW listings</h3>
+        <div class="meta">Adds brand-new listings. Duplicate name+city rows are skipped; problem rows are highlighted so you can fix &amp; re-upload. <b>To change listings that already exist, use the "✎ Bulk update" tab.</b></div>
+        <a href="/listing-template.csv" download style="display:inline-block;margin:0 12px 12px 0;color:var(--purple2);font-weight:700;text-decoration:none">⬇ Download template</a><br>
+        <input type="file" accept=".csv,text/csv" onchange="onCsvImport(this.files[0])">
         <div id="imp-preview" style="margin-top:12px"></div>
       </div>`;
   }
-  function onCsv(file){if(!file)return;const r=new FileReader();r.onload=()=>{_parsed=parseCSV(String(r.result));renderPreview();};r.readAsText(file);}
-  function parseCSV(text){
+  function loadUpdate(){
+    $('content').innerHTML=`
+      <div class="pcard imp">
+        <h3>✎ Bulk UPDATE existing listings</h3>
+        <div class="meta">Changes listings that already exist, matched by <b>UID</b>. Only cells you fill in overwrite; blank cells stay unchanged. <b>Workflow:</b> export current listings → edit in Excel (keep the UID column) → re-upload here.</div>
+        <a onclick="exportAllCSV()" style="display:inline-block;margin-bottom:12px;color:var(--purple2);font-weight:700;text-decoration:none;cursor:pointer">⬇ Export current listings (edit &amp; re-upload)</a><br>
+        <input type="file" accept=".csv,text/csv" onchange="onCsvUpdate(this.files[0])">
+        <div id="imp-preview" style="margin-top:12px"></div>
+      </div>`;
+  }
+  function onCsvImport(file){if(!file)return;const r=new FileReader();r.onload=()=>{_parsed=parseCSV(String(r.result));renderImportPreview();};r.readAsText(file);}
+  function onCsvUpdate(file){if(!file)return;const r=new FileReader();r.onload=()=>{_parsed=parseCSV(String(r.result));renderUpdatePreview();};r.readAsText(file);}
+  const _bool=v=>String(v).trim().toLowerCase()==='true';
+  const uidToId=v=>{const d=String(v||'').replace(/\D/g,'');return d?Number(d):0;};
+  function tokenizeCSV(text){
     const rows=[];let i=0,field='',row=[],inQ=false;
     while(i<text.length){const c=text[i];
       if(inQ){if(c==='"'){if(text[i+1]==='"'){field+='"';i++;}else inQ=false;}else field+=c;}
       else{if(c==='"')inQ=true;else if(c===','){row.push(field);field='';}else if(c==='\n'||c==='\r'){if(field!==''||row.length){row.push(field);rows.push(row);row=[];field='';}if(c==='\r'&&text[i+1]==='\n')i++;}else field+=c;}
       i++;}
     if(field!==''||row.length){row.push(field);rows.push(row);}
-    if(!rows.length)return [];
-    const H=rows[0].map(h=>h.trim());const bool=v=>String(v).trim().toLowerCase()==='true';
-    return rows.slice(1).filter(r=>r.some(c=>c.trim())).map(r=>{
-      const o={};H.forEach((h,idx)=>o[h]=(r[idx]||'').trim());
-      const rooms=[];[1,2,3].forEach(n=>{const t=o['room'+n+'Type'],rt=Number(o['room'+n+'Rent']);if(t&&rt>0)rooms.push({type:t,rent:rt,ac:bool(o['room'+n+'AC']),washroom:bool(o['room'+n+'Washroom']),furnished:bool(o['room'+n+'Furnished'])});});
+    return rows;
+  }
+  function parseCSV(text){
+    const raw=tokenizeCSV(text); if(!raw.length)return [];
+    const H=raw[0].map(h=>h.trim());
+    const out=[];
+    raw.slice(1).forEach((r,idx)=>{
+      if(!r.some(c=>c.trim()))return; // skip fully-blank line
+      const o={};H.forEach((h,k)=>o[h]=(r[k]||'').trim());
+      const rooms=[];[1,2,3].forEach(n=>{const t=o['room'+n+'Type'],rt=Number(o['room'+n+'Rent']);if(t&&rt>0)rooms.push({type:t,rent:rt,ac:_bool(o['room'+n+'AC']),washroom:_bool(o['room'+n+'Washroom']),furnished:_bool(o['room'+n+'Furnished'])});});
       let rent=Number(o.startingRent)||0;if(!rent&&rooms.length)rent=Math.min(...rooms.map(x=>x.rent));if(!rooms.length&&rent)rooms.push({type:'Standard room',rent});
-      return {name:o.name,city:o.city,area:o.area,nearCollege:o.nearCollege,address:o.address||'',gender:o.gender||'Co-ed',startingRent:rent,
+      // --- discrepancy checks ---
+      const issues=[], blocking=[];
+      if(!o.name) blocking.push('missing name');
+      if(!o.city) blocking.push('missing city');
+      else if(!CITIES.some(c=>c.toLowerCase()===o.city.toLowerCase())) issues.push('unknown city "'+o.city+'"');
+      if(o.startingRent && isNaN(Number(o.startingRent))) issues.push('rent is not a number');
+      if(!rent && !rooms.length) issues.push('no price / room given');
+      if(o.gender && !['girls','boys','co-ed','coed'].includes(o.gender.toLowerCase())) issues.push('unusual gender "'+o.gender+'"');
+      if(!o.contactPhone) issues.push('no contact number');
+      if(o.lat && isNaN(Number(o.lat))) issues.push('lat not a number');
+      if(o.lng && isNaN(Number(o.lng))) issues.push('lng not a number');
+      out.push({name:o.name,city:o.city,area:o.area,nearCollege:o.nearCollege,address:o.address||'',gender:o.gender||'Co-ed',startingRent:rent,
         deposit:Number(o.deposit)||0,depositRefund:o.depositRefund||'',noticePeriod:o.noticePeriod||'',electricity:o.electricity||'',extraCharges:o.extraCharges||'',
-        contactPhone:o.contactPhone,contactWhatsApp:o.contactWhatsApp,foodIncluded:bool(o.foodIncluded),foodDetail:o.foodDetail||'',
+        contactPhone:o.contactPhone,contactWhatsApp:o.contactWhatsApp,foodIncluded:_bool(o.foodIncluded),foodDetail:o.foodDetail||'',
         amenities:(o.amenities||'').split(';').map(a=>a.trim()).filter(Boolean),availableFrom:o.availableFrom||'',description:o.description||'',rules:o.rules||'',
         mapLink:o.mapLink||'',lat:o.lat?Number(o.lat):undefined,lng:o.lng?Number(o.lng):undefined,
-        safety:{guard:bool(o.securityGuard),warden:bool(o.warden),biometric:bool(o.biometric),visitorRegister:bool(o.visitorRegister),checkIn:o.checkIn||'',checkOut:o.checkOut||''},
-        rooms,photos:(o.photos||'').split(';').map(p=>p.trim()).filter(Boolean),hasAC:rooms.some(x=>x.ac)};
+        safety:{guard:_bool(o.securityGuard),warden:_bool(o.warden),biometric:_bool(o.biometric),visitorRegister:_bool(o.visitorRegister),checkIn:o.checkIn||'',checkOut:o.checkOut||''},
+        rooms,photos:(o.photos||'').split(';').map(p=>p.trim()).filter(Boolean),hasAC:rooms.some(x=>x.ac),
+        _row:idx+2, _raw:o, _uid:o.UID||o.uid||o.id||'', _issues:issues, _blocking:blocking});
     });
+    return out;
   }
-  function renderPreview(){
-    const ok=_parsed.filter(r=>r.name&&r.city);
+  // Build a partial patch for bulk-update: only fields actually present (non-empty) in the row.
+  function buildUpdatePatch(o){
+    const p={}, set=(k,v)=>{ if(v!==undefined && String(v).trim()!=='') p[k]=v; };
+    ['name','city','area','nearCollege','address','gender','contactPhone','contactWhatsApp','description','rules','mapLink','availableFrom','foodDetail','depositRefund','noticePeriod','electricity','extraCharges'].forEach(f=>set(f,o[f]));
+    if(o.startingRent!==undefined&&o.startingRent!=='') p.startingRent=Number(o.startingRent)||0;
+    if(o.deposit!==undefined&&o.deposit!=='') p.deposit=Number(o.deposit)||0;
+    if(o.foodIncluded!==undefined&&o.foodIncluded!=='') p.foodIncluded=_bool(o.foodIncluded);
+    if(o.amenities) p.amenities=o.amenities.split(';').map(a=>a.trim()).filter(Boolean);
+    if(o.photos) p.photos=o.photos.split(';').map(a=>a.trim()).filter(Boolean);
+    if(o.lat&&!isNaN(Number(o.lat))) p.lat=Number(o.lat);
+    if(o.lng&&!isNaN(Number(o.lng))) p.lng=Number(o.lng);
+    const rooms=[];[1,2,3].forEach(n=>{const t=o['room'+n+'Type'],rt=Number(o['room'+n+'Rent']);if(t&&rt>0)rooms.push({type:t,rent:rt,ac:_bool(o['room'+n+'AC']),washroom:_bool(o['room'+n+'Washroom']),furnished:_bool(o['room'+n+'Furnished'])});});
+    if(rooms.length){ p.rooms=rooms; p.startingRent=Math.min(...rooms.map(x=>x.rent)); }
+    return p;
+  }
+  function flaggedPanel(flagged){
+    if(!flagged.length) return '<div class="kv" style="color:var(--green)">✓ No discrepancies found.</div>';
+    return `<div class="pcard" style="border-color:#e0b4b4;background:#fff7f7;margin:10px 0">
+      <b style="color:#b00">⚠ Rows to fix (${flagged.length})</b>
+      <div class="meta">Rows with "missing name/city" are skipped; others import but may be wrong. Fix in your CSV and re-upload.</div>
+      <div style="max-height:200px;overflow:auto">${flagged.map(r=>`<div class="kv">Row ${r._row}: <b>${esc(r.name||'(no name)')}</b> — <span style="color:#b00">${[...r._blocking,...r._issues].join(', ')}</span></div>`).join('')}</div>
+      <button class="neutral" style="margin-top:8px;padding:7px 12px;border-radius:8px;cursor:pointer" onclick="downloadFlagged()">⬇ Download flagged rows (CSV)</button>
+    </div>`;
+  }
+  function downloadFlagged(){
+    const flagged=_parsed.filter(r=>r._issues.length||r._blocking.length);
+    const rows=[['row','name','city','issues']];
+    flagged.forEach(r=>rows.push([r._row,r.name,r.city,[...r._blocking,...r._issues].join('; ')]));
+    downloadCSV('flagged-rows.csv',rows);
+  }
+  // ---- Import NEW ----
+  function renderImportPreview(){
+    const flagged=_parsed.filter(r=>r._issues.length||r._blocking.length);
+    const importable=_parsed.filter(r=>!r._blocking.length);
+    const withUid=_parsed.filter(r=>uidToId(r._uid)>0).length;
     $('imp-preview').innerHTML=`
-      <div class="kv"><b>${_parsed.length}</b> rows, <b>${ok.length}</b> valid (need name + city).</div>
-      ${ok.slice(0,5).map(r=>`<div class="kv">• ${esc(r.name)} — ${esc(r.city)} · ${money(r.startingRent)}</div>`).join('')}${ok.length>5?`<div class="kv">…and ${ok.length-5} more</div>`:''}
-      <div style="margin:10px 0"><b style="font-size:13px">Import as:</b>
-        <label style="font-size:13px;margin-left:8px"><input type="radio" name="stage" value="draft" checked> Raw (not live)</label>
+      <div class="kv"><b>${_parsed.length}</b> rows · <b style="color:var(--green)">${importable.length}</b> importable · <b style="color:#b00">${flagged.length}</b> need attention.</div>
+      ${withUid?`<div class="pcard" style="border-color:#f0d9a0;background:#fff8ec;margin:10px 0"><b style="color:#9a6a00">⚠ This file has UID(s)</b><div class="meta">Looks like an <b>update</b> file. Importing here creates duplicates — switch to the "✎ Bulk update" tab to change existing listings.</div></div>`:''}
+      ${flaggedPanel(flagged)}
+      <div style="margin:12px 0"><b style="font-size:13px">Stage:</b>
+        <label style="font-size:13px;margin-left:8px"><input type="radio" name="stage" value="draft" checked> Raw</label>
         <label style="font-size:13px;margin-left:8px"><input type="radio" name="stage" value="unverified"> Live · Unverified</label>
-        <label style="font-size:13px;margin-left:8px"><input type="radio" name="stage" value="verified"> Verified</label>
-      </div>
-      <button class="approve" style="padding:10px 18px;border-radius:8px;cursor:pointer" onclick="doImport()">Import</button>`;
+        <label style="font-size:13px;margin-left:8px"><input type="radio" name="stage" value="verified"> Verified</label></div>
+      <button class="approve" style="padding:10px 18px;border-radius:8px;cursor:pointer" ${importable.length?'':'disabled'} onclick="doImportNew()">Import ${importable.length} new listing(s)</button>`;
+  }
+  // ---- Bulk UPDATE ----
+  function renderUpdatePreview(){
+    const withUid=_parsed.filter(r=>uidToId(r._uid)>0);
+    const noUid=_parsed.filter(r=>!(uidToId(r._uid)>0));
+    $('imp-preview').innerHTML=`
+      <div class="kv"><b>${_parsed.length}</b> rows · <b style="color:var(--green)">${withUid.length}</b> with a valid UID · <b style="color:#b00">${noUid.length}</b> without UID (skipped).</div>
+      ${noUid.length?`<div class="pcard" style="border-color:#e0b4b4;background:#fff7f7;margin:10px 0"><b style="color:#b00">⚠ ${noUid.length} row(s) have no UID</b><div class="meta">Can't be matched — will be skipped. Add a UID column (export current listings to get them).</div><div style="max-height:120px;overflow:auto">${noUid.slice(0,20).map(r=>`<div class="kv">Row ${r._row}: ${esc(r.name||'(no name)')}</div>`).join('')}</div></div>`:''}
+      ${withUid.length?`<div class="pcard" style="margin:10px 0"><b>Will update:</b><div style="max-height:150px;overflow:auto">${withUid.slice(0,12).map(r=>`<div class="kv">${code(uidToId(r._uid))} — ${esc(r.name||'(unchanged)')} · fields: ${Object.keys(buildUpdatePatch(r._raw)).join(', ')||'none'}</div>`).join('')}${withUid.length>12?'<div class="kv">…and '+(withUid.length-12)+' more</div>':''}</div></div>`:''}
+      <button class="approve" style="padding:10px 18px;border-radius:8px;cursor:pointer" ${withUid.length?'':'disabled'} onclick="doUpdate()">Update ${withUid.length} listing(s)</button>`;
   }
   let _importing=false;
-  async function doImport(){
-    if(!_parsed.length)return toast('Nothing to import');
-    if(_importing)return;_importing=true;
-    document.querySelectorAll('#imp-preview button').forEach(b=>b.disabled=true);
-    const stage=(document.querySelector('input[name=stage]:checked')||{}).value||'draft';
+  async function doImportNew(){
+    if(_importing)return; const rows=_parsed.filter(r=>!r._blocking.length);
+    if(!rows.length)return toast('No importable rows');
+    _importing=true; document.querySelectorAll('#imp-preview button').forEach(b=>b.disabled=true);
     try{
-      const res=await api('/api/admin/import',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({rows:_parsed,stage})});
+      const stage=(document.querySelector('input[name=stage]:checked')||{}).value||'draft';
+      const res=await api('/api/admin/import',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({rows,stage})});
       if(res.error){toast(res.error);return;}
-      toast(`Imported ${res.created}${res.duplicates?', '+res.duplicates+' dup skipped':''}${res.skipped?', '+res.skipped+' invalid':''}`);
-      _parsed=[];
-      showImportSummary(res);
+      toast(`Imported ${res.created}${res.duplicates?', '+res.duplicates+' dup':''}${res.skipped?', '+res.skipped+' invalid':''}`);
+      showImportSummary(res); _parsed=[];
     }finally{_importing=false;}
+  }
+  async function doUpdate(){
+    if(_importing)return;
+    const rows=_parsed.map(r=>({uid:uidToId(r._uid),patch:buildUpdatePatch(r._raw)})).filter(x=>x.uid>0);
+    if(!rows.length)return toast('No rows with a valid UID');
+    _importing=true; document.querySelectorAll('#imp-preview button').forEach(b=>b.disabled=true);
+    try{
+      const res=await api('/api/admin/bulk-update',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({rows})});
+      if(res.error){toast(res.error);return;}
+      toast(`Updated ${res.updated}${res.notFound&&res.notFound.length?', '+res.notFound.length+' not found':''}`);
+      showUpdateSummary(res); _parsed=[];
+    }finally{_importing=false;}
+  }
+  function showUpdateSummary(res){
+    const nf=res.notFound||[];
+    const wrap=document.createElement('div'); wrap.className='modal-bg show'; wrap.style.zIndex='95';
+    wrap.innerHTML=`<div class="modal" style="max-width:520px;max-height:82vh;overflow:auto">
+      <h3 style="font-size:18px;margin-bottom:8px">Bulk update summary</h3>
+      <div class="pcard" style="border-color:#cdebd9;background:#f2fbf6"><b style="color:var(--green)">✓ Updated: ${res.updated}</b></div>
+      ${nf.length?`<div class="pcard" style="border-color:#e0b4b4;background:#fff7f7;margin-top:10px"><b style="color:#b00">⚠ Not found: ${nf.length}</b><div class="meta">These UIDs didn't match any listing.</div>${nf.map(x=>`<div class="kv">• ${esc(x)}</div>`).join('')}</div>`:''}
+      <button style="width:100%;background:var(--purple2);color:#fff;border:none;padding:11px;border-radius:10px;font-weight:800;cursor:pointer;margin-top:10px" onclick="this.closest('.modal-bg').remove();loadAll&&0">Done</button>
+    </div>`;
+    wrap.addEventListener('click',e=>{if(e.target===wrap)wrap.remove();});
+    document.body.appendChild(wrap); $('imp-preview').innerHTML='';
   }
 </script>
 </body>
