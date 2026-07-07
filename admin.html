@@ -65,7 +65,8 @@
         <button id="tab-all" onclick="show('all')">All listings</button>
         <button id="tab-enq" onclick="show('enq')">Enquiries</button>
         <button id="tab-users" onclick="show('users')">Users</button>
-        <button id="tab-import" onclick="show('import')">Import CSV</button>
+        <button id="tab-import" onclick="show('import')">➕ Import new</button>
+        <button id="tab-update" onclick="show('update')">✎ Bulk update</button>
       </div>
       <div id="content"></div>
     </div>
@@ -135,8 +136,8 @@
     $('panel').style.display='block';show('dash');
   }
   function show(t){
-    ['dash','all','enq','users','import'].forEach(x=>$('tab-'+x).classList.toggle('on',x===t));
-    ({dash:loadDash,all:loadAll,enq:loadEnq,users:loadUsers,import:loadImport})[t]();
+    ['dash','all','enq','users','import','update'].forEach(x=>$('tab-'+x).classList.toggle('on',x===t));
+    ({dash:loadDash,all:loadAll,enq:loadEnq,users:loadUsers,import:loadImport,update:loadUpdate})[t]();
   }
 
   // ---- Dashboard ----
@@ -478,15 +479,25 @@
   function loadImport(){
     $('content').innerHTML=`
       <div class="pcard imp">
-        <h3>Bulk import / update listings from CSV</h3>
-        <div class="meta">Upload a CSV. You'll see any rows with problems (highlighted to fix). Choose <b>Add new</b> (duplicates auto-skipped) or <b>Update existing</b> — for updates, include a <b>UID</b> column (export the current listings to get UIDs, edit, and re-upload).</div>
-        <a href="/listing-template.csv" download style="display:inline-block;margin:0 12px 12px 0;color:var(--purple2);font-weight:700;text-decoration:none">⬇ Download template</a>
-        <a onclick="exportAllCSV()" style="display:inline-block;margin-bottom:12px;color:var(--purple2);font-weight:700;text-decoration:none;cursor:pointer">⬇ Export current listings (to edit &amp; re-upload)</a><br>
-        <input type="file" accept=".csv,text/csv" onchange="onCsv(this.files[0])">
+        <h3>➕ Import NEW listings</h3>
+        <div class="meta">Adds brand-new listings. Duplicate name+city rows are skipped; problem rows are highlighted so you can fix &amp; re-upload. <b>To change listings that already exist, use the "✎ Bulk update" tab.</b></div>
+        <a href="/listing-template.csv" download style="display:inline-block;margin:0 12px 12px 0;color:var(--purple2);font-weight:700;text-decoration:none">⬇ Download template</a><br>
+        <input type="file" accept=".csv,text/csv" onchange="onCsvImport(this.files[0])">
         <div id="imp-preview" style="margin-top:12px"></div>
       </div>`;
   }
-  function onCsv(file){if(!file)return;const r=new FileReader();r.onload=()=>{_parsed=parseCSV(String(r.result));renderPreview();};r.readAsText(file);}
+  function loadUpdate(){
+    $('content').innerHTML=`
+      <div class="pcard imp">
+        <h3>✎ Bulk UPDATE existing listings</h3>
+        <div class="meta">Changes listings that already exist, matched by <b>UID</b>. Only cells you fill in overwrite; blank cells stay unchanged. <b>Workflow:</b> export current listings → edit in Excel (keep the UID column) → re-upload here.</div>
+        <a onclick="exportAllCSV()" style="display:inline-block;margin-bottom:12px;color:var(--purple2);font-weight:700;text-decoration:none;cursor:pointer">⬇ Export current listings (edit &amp; re-upload)</a><br>
+        <input type="file" accept=".csv,text/csv" onchange="onCsvUpdate(this.files[0])">
+        <div id="imp-preview" style="margin-top:12px"></div>
+      </div>`;
+  }
+  function onCsvImport(file){if(!file)return;const r=new FileReader();r.onload=()=>{_parsed=parseCSV(String(r.result));renderImportPreview();};r.readAsText(file);}
+  function onCsvUpdate(file){if(!file)return;const r=new FileReader();r.onload=()=>{_parsed=parseCSV(String(r.result));renderUpdatePreview();};r.readAsText(file);}
   const _bool=v=>String(v).trim().toLowerCase()==='true';
   const uidToId=v=>{const d=String(v||'').replace(/\D/g,'');return d?Number(d):0;};
   function tokenizeCSV(text){
@@ -544,55 +555,69 @@
     if(rooms.length){ p.rooms=rooms; p.startingRent=Math.min(...rooms.map(x=>x.rent)); }
     return p;
   }
-  function renderPreview(){
+  function flaggedPanel(flagged){
+    if(!flagged.length) return '<div class="kv" style="color:var(--green)">✓ No discrepancies found.</div>';
+    return `<div class="pcard" style="border-color:#e0b4b4;background:#fff7f7;margin:10px 0">
+      <b style="color:#b00">⚠ Rows to fix (${flagged.length})</b>
+      <div class="meta">Rows with "missing name/city" are skipped; others import but may be wrong. Fix in your CSV and re-upload.</div>
+      <div style="max-height:200px;overflow:auto">${flagged.map(r=>`<div class="kv">Row ${r._row}: <b>${esc(r.name||'(no name)')}</b> — <span style="color:#b00">${[...r._blocking,...r._issues].join(', ')}</span></div>`).join('')}</div>
+      <button class="neutral" style="margin-top:8px;padding:7px 12px;border-radius:8px;cursor:pointer" onclick="downloadFlagged()">⬇ Download flagged rows (CSV)</button>
+    </div>`;
+  }
+  function downloadFlagged(){
+    const flagged=_parsed.filter(r=>r._issues.length||r._blocking.length);
+    const rows=[['row','name','city','issues']];
+    flagged.forEach(r=>rows.push([r._row,r.name,r.city,[...r._blocking,...r._issues].join('; ')]));
+    downloadCSV('flagged-rows.csv',rows);
+  }
+  // ---- Import NEW ----
+  function renderImportPreview(){
     const flagged=_parsed.filter(r=>r._issues.length||r._blocking.length);
     const importable=_parsed.filter(r=>!r._blocking.length);
     const withUid=_parsed.filter(r=>uidToId(r._uid)>0).length;
     $('imp-preview').innerHTML=`
-      <div class="kv"><b>${_parsed.length}</b> rows read · <b style="color:var(--green)">${importable.length}</b> importable · <b style="color:#b00">${flagged.length}</b> need attention.</div>
-      ${flagged.length?`<div class="pcard" style="border-color:#e0b4b4;background:#fff7f7;margin:10px 0">
-        <b style="color:#b00">⚠ Rows to fix (${flagged.length})</b>
-        <div class="meta">Fix these in your CSV and re-upload. Rows with "missing name/city" are skipped; others import but may be wrong.</div>
-        <div style="max-height:200px;overflow:auto">${flagged.map(r=>`<div class="kv">Row ${r._row}: <b>${esc(r.name||'(no name)')}</b> — <span style="color:#b00">${[...r._blocking,...r._issues].join(', ')}</span></div>`).join('')}</div>
-        <button class="neutral" style="margin-top:8px;padding:7px 12px;border-radius:8px;cursor:pointer" onclick="downloadFlagged()">⬇ Download flagged rows (CSV)</button>
-      </div>`:'<div class="kv" style="color:var(--green)">✓ No discrepancies found.</div>'}
-      <div style="margin:14px 0 6px"><b style="font-size:13px">What do you want to do?</b></div>
-      <label style="font-size:13px;display:block;margin:3px 0"><input type="radio" name="impmode" value="new" checked onchange="renderPreview()"> Add as NEW listings</label>
-      <label style="font-size:13px;display:block;margin:3px 0"><input type="radio" name="impmode" value="update"${_mode==='update'?' checked':''} onchange="renderPreview()"> Update EXISTING listings (match by UID column)${withUid?` — ${withUid} row(s) have a UID`:' — no UID column found!'}</label>
-      ${_mode==='new'?`<div style="margin:8px 0"><b style="font-size:13px">Stage:</b>
+      <div class="kv"><b>${_parsed.length}</b> rows · <b style="color:var(--green)">${importable.length}</b> importable · <b style="color:#b00">${flagged.length}</b> need attention.</div>
+      ${withUid?`<div class="pcard" style="border-color:#f0d9a0;background:#fff8ec;margin:10px 0"><b style="color:#9a6a00">⚠ This file has UID(s)</b><div class="meta">Looks like an <b>update</b> file. Importing here creates duplicates — switch to the "✎ Bulk update" tab to change existing listings.</div></div>`:''}
+      ${flaggedPanel(flagged)}
+      <div style="margin:12px 0"><b style="font-size:13px">Stage:</b>
         <label style="font-size:13px;margin-left:8px"><input type="radio" name="stage" value="draft" checked> Raw</label>
         <label style="font-size:13px;margin-left:8px"><input type="radio" name="stage" value="unverified"> Live · Unverified</label>
-        <label style="font-size:13px;margin-left:8px"><input type="radio" name="stage" value="verified"> Verified</label></div>`:'<div class="meta" style="margin:8px 0">Only non-empty cells will overwrite; blank cells are left unchanged. Keep the UID column.</div>'}
-      <button class="approve" style="padding:10px 18px;border-radius:8px;cursor:pointer" onclick="doImport()">${_mode==='update'?'Update listings':'Import'}</button>`;
+        <label style="font-size:13px;margin-left:8px"><input type="radio" name="stage" value="verified"> Verified</label></div>
+      <button class="approve" style="padding:10px 18px;border-radius:8px;cursor:pointer" ${importable.length?'':'disabled'} onclick="doImportNew()">Import ${importable.length} new listing(s)</button>`;
   }
-  let _mode='new';
-  document.addEventListener('change',e=>{ if(e.target&&e.target.name==='impmode') _mode=e.target.value; });
-  function downloadFlagged(){
-    const flagged=_parsed.filter(r=>r._issues.length||r._blocking.length);
-    const cols=['row','name','city','issues']; const rows=[cols];
-    flagged.forEach(r=>rows.push([r._row,r.name,r.city,[...r._blocking,...r._issues].join('; ')]));
-    downloadCSV('flagged-rows.csv',rows);
+  // ---- Bulk UPDATE ----
+  function renderUpdatePreview(){
+    const withUid=_parsed.filter(r=>uidToId(r._uid)>0);
+    const noUid=_parsed.filter(r=>!(uidToId(r._uid)>0));
+    $('imp-preview').innerHTML=`
+      <div class="kv"><b>${_parsed.length}</b> rows · <b style="color:var(--green)">${withUid.length}</b> with a valid UID · <b style="color:#b00">${noUid.length}</b> without UID (skipped).</div>
+      ${noUid.length?`<div class="pcard" style="border-color:#e0b4b4;background:#fff7f7;margin:10px 0"><b style="color:#b00">⚠ ${noUid.length} row(s) have no UID</b><div class="meta">Can't be matched — will be skipped. Add a UID column (export current listings to get them).</div><div style="max-height:120px;overflow:auto">${noUid.slice(0,20).map(r=>`<div class="kv">Row ${r._row}: ${esc(r.name||'(no name)')}</div>`).join('')}</div></div>`:''}
+      ${withUid.length?`<div class="pcard" style="margin:10px 0"><b>Will update:</b><div style="max-height:150px;overflow:auto">${withUid.slice(0,12).map(r=>`<div class="kv">${code(uidToId(r._uid))} — ${esc(r.name||'(unchanged)')} · fields: ${Object.keys(buildUpdatePatch(r._raw)).join(', ')||'none'}</div>`).join('')}${withUid.length>12?'<div class="kv">…and '+(withUid.length-12)+' more</div>':''}</div></div>`:''}
+      <button class="approve" style="padding:10px 18px;border-radius:8px;cursor:pointer" ${withUid.length?'':'disabled'} onclick="doUpdate()">Update ${withUid.length} listing(s)</button>`;
   }
   let _importing=false;
-  async function doImport(){
-    if(!_parsed.length)return toast('Nothing to process');
-    if(_importing)return;_importing=true;
-    document.querySelectorAll('#imp-preview button').forEach(b=>b.disabled=true);
+  async function doImportNew(){
+    if(_importing)return; const rows=_parsed.filter(r=>!r._blocking.length);
+    if(!rows.length)return toast('No importable rows');
+    _importing=true; document.querySelectorAll('#imp-preview button').forEach(b=>b.disabled=true);
     try{
-      if(_mode==='update'){
-        const rows=_parsed.map(r=>({uid:uidToId(r._uid),patch:buildUpdatePatch(r._raw)})).filter(x=>x.uid>0);
-        if(!rows.length){toast('No rows with a valid UID');return;}
-        const res=await api('/api/admin/bulk-update',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({rows})});
-        if(res.error){toast(res.error);return;}
-        toast(`Updated ${res.updated}${res.notFound&&res.notFound.length?', '+res.notFound.length+' not found':''}`);
-        showUpdateSummary(res); _parsed=[];
-      } else {
-        const stage=(document.querySelector('input[name=stage]:checked')||{}).value||'draft';
-        const res=await api('/api/admin/import',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({rows:_parsed.filter(r=>!r._blocking.length),stage})});
-        if(res.error){toast(res.error);return;}
-        toast(`Imported ${res.created}${res.duplicates?', '+res.duplicates+' dup':''}${res.skipped?', '+res.skipped+' invalid':''}`);
-        showImportSummary(res); _parsed=[];
-      }
+      const stage=(document.querySelector('input[name=stage]:checked')||{}).value||'draft';
+      const res=await api('/api/admin/import',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({rows,stage})});
+      if(res.error){toast(res.error);return;}
+      toast(`Imported ${res.created}${res.duplicates?', '+res.duplicates+' dup':''}${res.skipped?', '+res.skipped+' invalid':''}`);
+      showImportSummary(res); _parsed=[];
+    }finally{_importing=false;}
+  }
+  async function doUpdate(){
+    if(_importing)return;
+    const rows=_parsed.map(r=>({uid:uidToId(r._uid),patch:buildUpdatePatch(r._raw)})).filter(x=>x.uid>0);
+    if(!rows.length)return toast('No rows with a valid UID');
+    _importing=true; document.querySelectorAll('#imp-preview button').forEach(b=>b.disabled=true);
+    try{
+      const res=await api('/api/admin/bulk-update',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({rows})});
+      if(res.error){toast(res.error);return;}
+      toast(`Updated ${res.updated}${res.notFound&&res.notFound.length?', '+res.notFound.length+' not found':''}`);
+      showUpdateSummary(res); _parsed=[];
     }finally{_importing=false;}
   }
   function showUpdateSummary(res){
