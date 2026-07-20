@@ -93,6 +93,90 @@
     downloadCSV('nestus-listings-'+new Date().toISOString().slice(0,10)+'.csv', rows);
     toast('Exported '+list.length+' listings');
   }
+  // ---- WhatsApp campaign export (Interakt-ready, one row per OWNER not per listing) ----
+  // Pulls the first valid Indian mobile out of a free-text phone field ("98765 43210 / 91234-56789").
+  function waNorm(raw){
+    const parts=String(raw||'').split(/[,/;|&]+/);
+    for(const p of parts){
+      // Strip leading zeros (0/00/0091 dialling prefixes), then the 91 country code.
+      // Never blind-slice the last 10 digits, or junk-length numbers sneak through.
+      let d=String(p).replace(/\D/g,'').replace(/^0+/,'');
+      if(d.length===12&&d.startsWith('91')) d=d.slice(2);
+      if(d.length===10&&/^[6-9]/.test(d)) return '91'+d;
+    }
+    return '';
+  }
+  // What this listing is still missing — so you know what to ask each owner for.
+  function missingOf(l){
+    const m=[];
+    if(!(l.photos&&l.photos.length)) m.push('photos');
+    if(!l.startingRent) m.push('rent');
+    if(!(l.rooms&&l.rooms.length)) m.push('room types');
+    if(!l.deposit) m.push('deposit');
+    if(!l.address) m.push('address');
+    if(!(l.amenities&&l.amenities.length)) m.push('amenities');
+    if(!l.gender) m.push('gender');
+    if(!l.nearCollege) m.push('landmark');
+    return m;
+  }
+  async function exportCampaignCSV(){
+    const list=await api('/api/admin/listings');
+    if(!Array.isArray(list)){toast('Could not load listings');return;}
+    const cities=[...new Set(list.map(l=>l.city).filter(Boolean))].sort();
+    const wrap=document.createElement('div');
+    wrap.className='modal-bg show'; wrap.style.zIndex='95';
+    wrap.innerHTML=`<div class="modal" style="max-width:460px">
+      <h3 style="font-size:18px;margin-bottom:4px">WhatsApp campaign list</h3>
+      <p class="s" style="color:var(--muted);font-size:13px;margin-bottom:12px">Builds an Interakt-ready CSV: <b>one row per owner</b>, deduped by phone, with each property's link and what's missing.</p>
+      <label style="font-size:13px;font-weight:700">City</label>
+      <select id="camp-city" style="width:100%;border:1px solid var(--line);border-radius:10px;padding:10px;font-size:14px;margin:6px 0 14px">
+        <option value="">All cities (${list.length})</option>
+        ${cities.map(c=>`<option value="${esc(c)}">${esc(c)} (${list.filter(l=>l.city===c).length})</option>`).join('')}
+      </select>
+      <div style="display:flex;gap:8px;justify-content:flex-end">
+        <button class="neutral" style="padding:9px 14px;border-radius:8px;cursor:pointer" onclick="this.closest('.modal-bg').remove()">Cancel</button>
+        <button id="camp-go" style="padding:9px 16px;border-radius:8px;cursor:pointer;background:var(--purple2);color:#fff;border:0;font-weight:800">Build CSV</button>
+      </div></div>`;
+    document.body.appendChild(wrap);
+    wrap.querySelector('#camp-go').onclick=()=>{
+      const city=wrap.querySelector('#camp-city').value;
+      wrap.remove(); buildCampaignCSV(list, city);
+    };
+  }
+  function buildCampaignCSV(list, city){
+    const scope=city?list.filter(l=>l.city===city):list;
+    const byPhone=new Map(), noPhone=[];
+    scope.forEach(l=>{
+      const p=waNorm(l.contactWhatsApp)||waNorm(l.contactPhone);
+      if(!p){noPhone.push(l);return;}
+      if(!byPhone.has(p)) byPhone.set(p,[]);
+      byPhone.get(p).push(l);
+    });
+    const cols=['phone','hostel_name','city','listing_url','url_suffix','missing_fields','properties_count','other_properties','owner_name','uid'];
+    const rows=[cols];
+    byPhone.forEach((ls,phone)=>{
+      ls.sort((a,b)=>missingOf(b).length-missingOf(a).length); // lead with the property needing most
+      const l=ls[0];
+      rows.push([phone,l.name||'',l.city||'','https://nestus.in/?listing='+l.id,'?listing='+l.id,
+        missingOf(l).join('; ')||'none',ls.length,ls.slice(1).map(x=>x.name).join('; '),l.ownerName||'',code(l.id)]);
+    });
+    const tag=(city||'all-cities').toLowerCase().replace(/\s+/g,'-');
+    downloadCSV('nestus-whatsapp-campaign-'+tag+'-'+new Date().toISOString().slice(0,10)+'.csv', rows);
+    showCampaignSummary(scope.length, byPhone.size, noPhone, city);
+  }
+  function showCampaignSummary(total, owners, noPhone, city){
+    const merged=total-owners-noPhone.length;
+    const wrap=document.createElement('div');
+    wrap.className='modal-bg show'; wrap.style.zIndex='95';
+    wrap.innerHTML=`<div class="modal" style="max-width:520px;max-height:84vh;overflow:auto">
+      <h3 style="font-size:18px;margin-bottom:4px">Campaign list ready</h3>
+      <p class="s" style="color:var(--muted);font-size:13px;margin-bottom:12px">${esc(city||'All cities')} — ${total} listing(s) scanned. File downloaded to your computer.</p>
+      <div class="pcard" style="border-color:#cdebd9;background:#f2fbf6;margin-bottom:10px"><b style="color:var(--green)">✓ ${owners} owners to message</b><div class="meta">One row per owner. Upload this CSV to Interakt as your campaign audience.</div></div>
+      ${merged>0?`<div class="pcard" style="border-color:#f0d9a0;background:#fff8ec;margin-bottom:10px"><b style="color:#9a6a00">⚑ ${merged} duplicate listing(s) merged</b><div class="meta">The same owner phone appears on multiple properties. They get <b>one</b> message, not several — sending repeats is what gets numbers reported.</div></div>`:''}
+      ${noPhone.length?`<div class="pcard" style="border-color:#f3c9c9;background:#fdf4f4;margin-bottom:10px"><b style="color:#a33">✕ ${noPhone.length} listing(s) unreachable</b><div class="meta">No valid Indian mobile number — excluded. Fix these to include them next time:</div><div style="max-height:150px;overflow:auto;margin-top:6px;font-size:12px;line-height:1.7">${noPhone.slice(0,40).map(l=>esc(code(l.id)+' · '+(l.name||'—'))).join('<br>')}${noPhone.length>40?'<br>…and '+(noPhone.length-40)+' more':''}</div></div>`:''}
+      <button style="width:100%;background:var(--purple2);color:#fff;border:none;padding:11px;border-radius:10px;font-weight:800;cursor:pointer;margin-top:6px" onclick="this.closest('.modal-bg').remove()">Done</button></div>`;
+    document.body.appendChild(wrap);
+  }
   // Popup detailing exactly what an import committed vs skipped.
   function showImportSummary(res){
     const ids=res.createdIds||[], dups=res.duplicateList||[], inv=res.invalidList||[];
@@ -199,6 +283,7 @@
         <label style="font-size:13px;font-weight:600"><input type="checkbox" id="selall" onchange="document.querySelectorAll('.sel').forEach(c=>c.checked=this.checked)"> Select all</label>
         <button class="reject" style="padding:8px 14px;border-radius:8px;cursor:pointer" onclick="deleteSelected()">🗑 Delete selected</button>
         <button class="neutral" style="padding:8px 14px;border-radius:8px;cursor:pointer" onclick="exportAllCSV()">⬇ Export all (CSV)</button>
+        <button class="neutral" style="padding:8px 14px;border-radius:8px;cursor:pointer" onclick="exportCampaignCSV()">💬 WhatsApp campaign list</button>
       </div>
       <div id="all-rows"></div>`;
     renderAllRows();
